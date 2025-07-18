@@ -1,4 +1,4 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
@@ -7,6 +7,7 @@ import { Patient } from '../entities/patient.entity';
 import { SignupDto } from './dto/signup.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
+import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
@@ -18,9 +19,9 @@ export class AuthService {
   ) {}
 
   async signup(dto: SignupDto) {
-    const { email, phone, password, role } = dto;
+    const { email, phone_number, password, role } = dto;
 
-    const exists = await this.userRepo.findOne({ where: [{ email }, { phone }] });
+    const exists = await this.userRepo.findOne({ where: [{ email }, { phone_number }] });
     if (exists) throw new ConflictException('User already exists');
 
     const hashed = await bcrypt.hash(password, 10);
@@ -28,7 +29,7 @@ export class AuthService {
     const user = this.userRepo.create({
       name: dto.name,
       email,
-      phone,
+      phone_number,
       password: hashed,
       role,
     });
@@ -62,4 +63,32 @@ export class AuthService {
       token,
     };
   }
+  async login(dto: LoginDto) {
+  const { email, password } = dto;
+
+  if (!email) {
+    throw new UnauthorizedException('Email or phone number is required');
+  }
+
+  const user = await this.userRepo.findOne({
+    where: { email }
+  });
+
+  if (!user) {
+    throw new UnauthorizedException('Invalid credentials');
+  }
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) {
+    throw new UnauthorizedException('Invalid credentials');
+  }
+
+  const payload = { sub: user.id, role: user.role };
+  const token = await this.jwtService.signAsync(payload);
+
+  return {
+    message: 'Login successful',
+    token,
+  };
+}
 }
