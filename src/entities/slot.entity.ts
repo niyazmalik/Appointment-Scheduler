@@ -2,11 +2,6 @@ import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'ty
 import { Doctor } from './doctor.entity';
 import { Appointment } from './appointment.entity';
 
-export enum SlotMode {
-  STREAM = 'stream',
-  WAVE = 'wave',
-}
-
 export enum Weekday {
   SUNDAY = 'sunday',
   MONDAY = 'monday',
@@ -29,17 +24,14 @@ export class Slot {
   day: Weekday; 
 
   @Column()
-  startTime: string; 
+  start_time: string; 
 
   @Column()
-  endTime: string; 
-
-  @Column({type: 'enum', enum: SlotMode})
-  mode: SlotMode;
+  end_time: string; 
 
   @Column({ nullable: true })
-  maxBookings?: number;
+  max_bookings?: number;
 
-  @OneToMany(() => Appointment, (appt) => appt.slot)
+  @OneToMany(() => Appointment, (appointment) => appointment.slot)
   appointments: Appointment[];
 }
