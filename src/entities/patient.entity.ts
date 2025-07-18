@@ -22,6 +22,6 @@ export class Patient {
     @Column({nullable: true})
     address: string
 
-    @OneToMany(() => Appointment, (appt) => appt.patient)
+    @OneToMany(() => Appointment, (appointment) => appointment.patient)
     appointments: Appointment[];
 }
