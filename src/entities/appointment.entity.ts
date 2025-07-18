@@ -14,11 +14,16 @@ export class Appointment {
   patient: Patient;
 
   @Column()
-  reason: string;
+  description: string;
 
-  @Column({ default: 'confirmed' })
+  @Column({
+  type: 'enum',
+  enum: ['confirmed', 'cancelled', 'rescheduled'],
+  default: 'confirmed',
+  })
   status: 'confirmed' | 'cancelled' | 'rescheduled';
 
-  @Column({ nullable: true })
-  createdAt: Date;
+
+  @Column({ name: 'created_at', nullable: true })
+  created_at: Date;
 }
