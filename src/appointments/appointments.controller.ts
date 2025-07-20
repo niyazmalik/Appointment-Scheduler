@@ -44,6 +44,7 @@ export class AppointmentsController {
     }
 
     @Patch(':id/cancel')
+    @Roles('patient')
     cancelAppointment(
         @Param('id') id: string,
         @Body() dto: CancelAppointmentDto,
