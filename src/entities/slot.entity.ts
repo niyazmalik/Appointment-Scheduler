@@ -27,7 +27,10 @@ export class Slot {
   start_time: string; 
 
   @Column()
-  end_time: string; 
+  end_time: string;
+  
+  @Column({ default: false })
+  is_booked: boolean;
 
   @Column({ nullable: true })
   max_bookings?: number;
