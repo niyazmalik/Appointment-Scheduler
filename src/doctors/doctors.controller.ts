@@ -66,7 +66,6 @@ export class DoctorsController {
 
   @Get('slots/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('doctor')
   async getSlotById(@Param('id', ParseUUIDPipe) id: string) {
     return this.doctorsService.getSlotById(id);
   }

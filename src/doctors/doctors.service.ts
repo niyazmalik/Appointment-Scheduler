@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import { Doctor } from '../entities/doctor.entity';
@@ -54,14 +54,33 @@ export class DoctorsService {
   }
 
   async createSlot(userId: string, dto: CreateSlotDto) {
-    const doctor = await this.doctorRepo.findOne({
-      where: { user: { id: userId } },
-    });
-    if (!doctor) throw new NotFoundException('Doctor profile not found');
+  const doctor = await this.doctorRepo.findOne({
+    where: { user: { id: userId } },
+  });
+  if (!doctor) throw new NotFoundException('Doctor profile not found');
 
-    const slot = this.slotRepo.create({ ...dto, doctor });
-    return this.slotRepo.save(slot);
+  // Check for overlapping slot
+  const existingSlot = await this.slotRepo
+    .createQueryBuilder('slot')
+    .where('slot.doctorId = :doctorId', { doctorId: doctor.id })
+    .andWhere('slot.day = :day', { day: dto.day })
+    .andWhere(
+      '(slot.start_time < :end_time AND slot.end_time > :start_time)',
+      {
+        start_time: dto.start_time,
+        end_time: dto.end_time,
+      },
+    )
+    .getOne();
+
+  if (existingSlot) {
+    throw new BadRequestException('Overlapping slot already exists for this day/time');
   }
+
+  const slot = this.slotRepo.create({ ...dto, doctor });
+  return this.slotRepo.save(slot);
+}
+
 
   
 async getDoctorSlots(doctorId: string, day?: Weekday) {

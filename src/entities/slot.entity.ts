@@ -28,12 +28,15 @@ export class Slot {
 
   @Column()
   end_time: string;
+
+  @Column({nullable: true })
+  cancel_before_hours: number;
   
   @Column({ default: false })
   is_booked: boolean;
 
-  @Column({ nullable: true })
-  max_bookings?: number;
+  @Column({ type: 'int', default: 1 })
+  max_bookings: number;
 
   @OneToMany(() => Appointment, (appointment) => appointment.slot)
   appointments: Appointment[];

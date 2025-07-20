@@ -1,29 +1,39 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
-import { Slot } from './slot.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  CreateDateColumn,
+} from 'typeorm';
 import { Patient } from './patient.entity';
+import { Slot } from './slot.entity';
+
+export enum AppointmentStatus {
+  CONFIRMED = 'confirmed',
+  CANCELLED = 'cancelled',
+  RESCHEDULED = 'rescheduled',
+}
 
 @Entity('appointments')
 export class Appointment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Slot, (slot) => slot.appointments)
-  slot: Slot;
-
   @ManyToOne(() => Patient, (patient) => patient.appointments)
   patient: Patient;
 
-  @Column()
-  description: string;
+  @ManyToOne(() => Slot, (slot) => slot.appointments)
+  slot: Slot;
 
-  @Column({
-  type: 'enum',
-  enum: ['confirmed', 'cancelled', 'rescheduled'],
-  default: 'confirmed',
-  })
-  status: 'confirmed' | 'cancelled' | 'rescheduled';
+  @Column({ type: 'enum', enum: AppointmentStatus, default: AppointmentStatus.CONFIRMED })
+  status: AppointmentStatus;
 
+  @Column({ nullable: true })
+  appointment_reason: string;
 
-  @Column({ name: 'created_at', nullable: true })
+  @Column({ nullable: true })
+  cancellation_reason: string;
+
+  @CreateDateColumn()
   created_at: Date;
 }

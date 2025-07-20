@@ -15,6 +15,10 @@ export class CreateSlotDto { // I have not included is_booked beacuse by default
   @IsNotEmpty()
   end_time: string;
 
+  @IsNumber()
+  @IsNotEmpty()
+  cancel_before_hours: number;
+
   @IsOptional()
   @IsNumber()
   max_bookings?: number;
