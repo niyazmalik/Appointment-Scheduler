@@ -12,6 +12,9 @@ import { PatientsModule } from './patients/patients.module';
 import { DoctorsController } from './doctors/doctors.controller';
 import { DoctorsService } from './doctors/doctors.service';
 import { DoctorsModule } from './doctors/doctors.module';
+import { AppointmentsController } from './appointments/appointments.controller';
+import { AppointmentsService } from './appointments/appointments.service';
+import { AppointmentsModule } from './appointments/appointments.module';
 
 @Module({
   imports: [
@@ -41,6 +44,7 @@ import { DoctorsModule } from './doctors/doctors.module';
     AuthModule,
     PatientsModule,
     DoctorsModule,
+    AppointmentsModule,
   ],
  })
 export class AppModule {}

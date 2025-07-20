@@ -28,6 +28,9 @@ export class Slot {
 
   @Column()
   end_time: string;
+
+  @Column({nullable: true })
+  cancel_before_hours: number;
   
   @Column({ default: false })
   is_booked: boolean;
