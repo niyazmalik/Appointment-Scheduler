@@ -28,7 +28,7 @@ export class AppointmentsController {
         @Query('page') page = 1,
         @Query('limit') limit = 10,
     ) {
-        const user = req.user as any;
+        const user = req.user as User;
         return this.appointmentsService.getAllAppointments(user.id, user.role, status, +page, +limit);
     }
 
@@ -48,9 +48,10 @@ export class AppointmentsController {
     cancelAppointment(
         @Param('id') id: string,
         @Body() dto: CancelAppointmentDto,
-        @Req() req,
+        @Req() req: Request,
     ) {
-        return this.appointmentsService.cancelAppointment(id, req.user.id, dto);
+        const user = req.user as User;
+        return this.appointmentsService.cancelAppointment(id, user.id, dto);
     }
 
 
