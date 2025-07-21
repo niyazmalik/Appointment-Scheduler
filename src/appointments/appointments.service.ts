@@ -84,6 +84,13 @@ export class AppointmentsService {
             doctor_id: saved.slot.doctor.id,
             status: saved.status,
             appointment_reason: saved.appointment_reason,
+            slot: {
+                id: appointment.slot.id,
+                day: appointment.slot.day,
+                start_time: appointment.slot.start_time,
+                end_time: appointment.slot.end_time,
+                is_booked: appointment.slot.is_booked
+            },
         };
     }
 
@@ -182,7 +189,21 @@ export class AppointmentsService {
         appointment.status = AppointmentStatus.RESCHEDULED;
         if (dto.appointment_reason) appointment.appointment_reason = dto.appointment_reason;
 
-        return this.appointmentRepo.save(appointment);
+        const saved = await this.appointmentRepo.save(appointment);
+
+        return {
+            appointment_id: saved.id,
+            status: saved.status,
+            appointment_reason: saved.appointment_reason,
+            New_slot: {
+                id: saved.slot.id,
+                day: saved.slot.day,
+                start_time: saved.slot.start_time,
+                end_time: saved.slot.end_time,
+                is_booked: saved.slot.is_booked
+            },
+        };
+
     }
 
     async cancelAppointment(
@@ -212,12 +233,14 @@ export class AppointmentsService {
             throw new NotFoundException('Slot not found');
         }
 
-        const now = new Date(slot.start_time);
-        const cancelBefore = new Date(now.getTime() - slot.cancel_before_hours * 60 * 60 * 1000);
+        const slotStart = new Date(slot.start_time); // Convert string → Date
+        const now = new Date();
+        const cancelBefore = new Date(slotStart.getTime() - slot.cancel_before_hours * 60 * 60 * 1000);
 
         if (now > cancelBefore) {
             throw new BadRequestException('Cancellation time has passed');
         }
+
 
         appointment.status = AppointmentStatus.CANCELLED;
         appointment.cancellation_reason = dto.reason || 'Cancelled by patient';
