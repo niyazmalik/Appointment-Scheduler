@@ -9,11 +9,7 @@ import { Patient } from './entities/patient.entity';
 import { Slot } from './entities/slot.entity';
 import { Appointment } from './entities/appointment.entity';
 import { PatientsModule } from './patients/patients.module';
-import { DoctorsController } from './doctors/doctors.controller';
-import { DoctorsService } from './doctors/doctors.service';
 import { DoctorsModule } from './doctors/doctors.module';
-import { AppointmentsController } from './appointments/appointments.controller';
-import { AppointmentsService } from './appointments/appointments.service';
 import { AppointmentsModule } from './appointments/appointments.module';
 
 @Module({
