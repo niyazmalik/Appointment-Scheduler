@@ -23,10 +23,10 @@ export class Slot {
   @Column({type: 'enum', enum: Weekday})
   day: Weekday; 
 
-  @Column()
+  @Column({type: 'time'})
   start_time: string; 
 
-  @Column()
+  @Column({type: 'time'})
   end_time: string;
 
   @Column({nullable: true })
@@ -37,6 +37,12 @@ export class Slot {
 
   @Column({ type: 'int', default: 1 })
   max_bookings: number;
+
+  @Column({ type: 'timestamp' })
+  booking_start_at: Date;
+
+  @Column({ type: 'timestamp' })
+  booking_end_at: Date;
 
   @OneToMany(() => Appointment, (appointment) => appointment.slot)
   appointments: Appointment[];
