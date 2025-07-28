@@ -4,10 +4,10 @@ import { ILike, Repository } from 'typeorm';
 import { Doctor } from '../entities/doctor.entity';
 import { Slot } from '../entities/slot.entity';
 import { CreateSlotDto } from './dto/create-slot.dto';
-import { UpdateSlotDto } from './dto/update-slot.dto';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { Session } from '../entities/session.entity';
 import { UpdateSessionDto } from './dto/update-session.dto';
+import { Appointment, AppointmentStatus } from 'src/entities/appointment.entity';
 
 @Injectable()
 export class DoctorsService {
@@ -20,6 +20,9 @@ export class DoctorsService {
 
     @InjectRepository(Doctor)
     private readonly doctorRepo: Repository<Doctor>,
+
+    @InjectRepository(Appointment)
+    private readonly appointmentRepo: Repository<Appointment>,
   ) { }
 
   async getAllDoctors(search = '', page = 1, limit = 10) {
@@ -177,16 +180,16 @@ export class DoctorsService {
       throw new BadRequestException('start_time must be before end_time');
     }
 
-    const startChanged = dto.consult_start_time && dto.consult_start_time!== originalStart;
+    const startChanged = dto.consult_start_time && dto.consult_start_time !== originalStart;
     const endChanged = dto.consult_end_time && dto.consult_end_time !== originalEnd;
 
     // Handling different scenarios...
     if (startChanged) {
-      await this.handleStartTimeShrinkOrExpand(session, newStart);
+      await this.handleStartTimeShrink(session, newStart);
     }
 
     if (endChanged) {
-      await this.handleEndTimeShrinkOrExpand(session, newEnd);
+      await this.handleEndTimeShrink(session, newEnd);
     }
 
     // Now update
@@ -205,37 +208,114 @@ export class DoctorsService {
     };
   }
 
-  private async handleStartTimeShrinkOrExpand(session: Session, newStartTime: string) {
+  private async handleStartTimeShrink(session: Session, newStartTime: string) {
+    const slotsToDelete: Slot[] = [];
+    const affectedAppointments: Appointment[] = [];
+
+    const originalStartTime = session.consult_start_time;
+
     for (const slot of session.slots) {
-      if (slot.start_time < newStartTime) {
-        if (slot.appointments.length > 0) {
-          throw new ConflictException(
-            `Cannot shrink start_time. Slot from ${slot.start_time} to ${slot.end_time} has bookings`
-          );
+      const slotStart = getTodayDateTime(slot.start_time);
+      const slotEnd = getTodayDateTime(slot.end_time);
+      const newStart = getTodayDateTime(newStartTime);
+      const originalStart = getTodayDateTime(originalStartTime);
+
+      if (
+        slotEnd <= newStart &&
+        slotStart >= originalStart
+      ) {
+        if (slot.appointments.length === 0) {
+          slotsToDelete.push(slot);
+        } else {
+          affectedAppointments.push(...slot.appointments);
         }
       }
     }
 
-    // Optionally delete or archive affected slots
-    await this.slotRepo.remove(
-      session.slots.filter(slot => slot.start_time < newStartTime && slot.appointments.length === 0)
-    );
+    await this.slotRepo.remove(slotsToDelete);
+
+    if (affectedAppointments.length > 0) {
+      const remainingSlots = session.slots.filter(
+        slot => getTodayDateTime(slot.start_time) >= getTodayDateTime(newStartTime)
+      );
+
+      const rescheduled: Appointment[] = [];
+      const pending: Appointment[] = [];
+
+      for (const appointment of affectedAppointments) {
+        const availableSlot = remainingSlots.find(
+          s => s.appointments.length < s.max_bookings
+        );
+
+        if (availableSlot) {
+          appointment.slot = availableSlot;
+          appointment.status = AppointmentStatus.RESCHEDULED;
+          rescheduled.push(appointment);
+        } else {
+          appointment.status = AppointmentStatus.PENDING_RESCHEDULE;
+          pending.push(appointment);
+        }
+      }
+
+      await this.appointmentRepo.save([...rescheduled, ...pending]);
+    }
   }
 
-  private async handleEndTimeShrinkOrExpand(session: Session, newEndTime: string) {
+  private async handleEndTimeShrink(session: Session, newEndTime: string) {
+    const slotsToDelete: Slot[] = [];
+    const affectedAppointments: Appointment[] = [];
+
+    const originalEndTime = session.consult_end_time;
+    const currentTime = new Date();
+
     for (const slot of session.slots) {
-      if (slot.end_time > newEndTime) {
-        if (slot.appointments.length > 0) {
-          throw new ConflictException(
-            `Cannot shrink end_time. Slot from ${slot.start_time} to ${slot.end_time} has bookings`
-          );
+      const slotStart = getTodayDateTime(slot.start_time);
+
+      if (slotStart >= getTodayDateTime(newEndTime) && slotStart < getTodayDateTime(originalEndTime)) {
+        if (slot.appointments.length === 0) {
+          slotsToDelete.push(slot);
+        } else {
+          affectedAppointments.push(...slot.appointments);
         }
       }
     }
 
-    // Delete or cleanup slots beyond new end_time
-    await this.slotRepo.remove(
-      session.slots.filter(slot => slot.end_time > newEndTime && slot.appointments.length === 0)
-    );
+    await this.slotRepo.remove(slotsToDelete);
+
+    if (affectedAppointments.length > 0) {
+      const validSlotsForReschedule = session.slots.filter(slot => {
+        const slotStart = getTodayDateTime(slot.start_time);
+        const isWithinNewWindow = slotStart >= getTodayDateTime(session.consult_start_time) && slotStart < getTodayDateTime(newEndTime);
+        const isNotAttendedYet = slotStart >= currentTime;
+        return isWithinNewWindow && isNotAttendedYet;
+      });
+
+      const rescheduled: Appointment[] = [];
+      const pending: Appointment[] = [];
+
+      for (const appointment of affectedAppointments) {
+        const availableSlot = validSlotsForReschedule.find(
+          s => s.appointments.length < s.max_bookings
+        );
+
+        if (availableSlot) {
+          appointment.slot = availableSlot;
+          appointment.status = AppointmentStatus.RESCHEDULED;
+          rescheduled.push(appointment);
+        } else {
+          appointment.status = AppointmentStatus.PENDING_RESCHEDULE;
+          pending.push(appointment);
+        }
+      }
+
+      await this.appointmentRepo.save([...rescheduled, ...pending]);
+    }
   }
+}
+
+function getTodayDateTime(timeStr: string): Date {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  const now = new Date();
+  now.setHours(hours, minutes, 0, 0);
+  return now;
 }
