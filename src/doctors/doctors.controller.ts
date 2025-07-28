@@ -1,5 +1,5 @@
 import {
-    Body,
+  Body,
   Controller,
   Delete,
   Get,
@@ -20,15 +20,12 @@ import { CreateSlotDto } from './dto/create-slot.dto';
 
 import { Request } from 'express';
 import { User } from 'src/entities/user.entity';
-import { Weekday } from 'src/entities/slot.entity';
-
-interface AuthRequest extends Request {
-  user: any;
-}
+import { CreateSessionDto } from './dto/create-session.dto';
+import { UpdateSessionDto } from './dto/update-session.dto';
 
 @Controller('/api/doctors')
 export class DoctorsController {
-  constructor(private readonly doctorsService: DoctorsService) {}
+  constructor(private readonly doctorsService: DoctorsService) { }
 
   @Get()
   async getAllDoctors(
@@ -39,57 +36,36 @@ export class DoctorsController {
     return this.doctorsService.getAllDoctors(search, +page, +limit);
   }
 
-  @Post('slots')
+  @Post('sessions')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('doctor')
-  async createSlot(@Req() req: Request, @Body() dto: CreateSlotDto) {
+  async createSession(@Req() req: Request, @Body() dto: CreateSessionDto) {
     const user = req.user as User;
-    return this.doctorsService.createSlot(user.id, dto);
+    return this.doctorsService.createSession(user.id, dto);
   }
 
-  @Get('slots')
+  @Post('sessions/:id/slots')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('doctor')
-  async getOwnSlots(@Req() req: Request) {
-    const user = req.user as User;
-    return this.doctorsService.getOwnSlotsByUserId(user.id);
-  }
-  
-  @Get(':id/slots')
-  @UseGuards(JwtAuthGuard)
-  async getDoctorSlots(
-    @Param('id') doctorId: string,
-     @Query('day') day?: Weekday
- ) {
-    return this.doctorsService.getDoctorSlots(doctorId, day);
- }
-
-  @Get('slots/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  async getSlotById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.doctorsService.getSlotById(id);
-  }
-
-  @Get(':id')
-  @UseGuards(JwtAuthGuard)
-  async getDoctorById(@Param('id') id: string) {
-    return this.doctorsService.getDoctorById(id);
-  }
-
-  @Patch('slots/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('doctor')
-  async updateSlot(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateSlotDto,
+  async createSlot(
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Req() req: Request,
+    @Body() dto: CreateSlotDto
   ) {
-    return this.doctorsService.updateSlot(id, dto);
+    const user = req.user as User;
+    return this.doctorsService.createSlotInSession(user.id, sessionId, dto);
   }
 
-  @Delete('slots/:id')
+  @Patch('sessions/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('doctor')
-  async deleteSlot(@Param('id', ParseUUIDPipe) id: string) {
-    return this.doctorsService.deleteSlot(id);
+  async updateSession(
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Body() dto: UpdateSessionDto,
+    @Req() req: Request,
+  ) {
+    const user = req.user as User;
+    return this.doctorsService.updateSession(user.id, sessionId, dto);
   }
+
 }

@@ -5,6 +5,7 @@ import { Patient } from 'src/entities/patient.entity';
 import { Appointment } from 'src/entities/appointment.entity';
 import { Slot } from 'src/entities/slot.entity';
 import { Doctor } from 'src/entities/doctor.entity';
+import { Session } from 'src/entities/session.entity';
 dotenv.config();
 
 export default new DataSource({
@@ -15,6 +16,6 @@ export default new DataSource({
   password: process.env.DATABASE_PASSWORD,
   database: process.env.DATABASE_NAME || "healthcare_backend_db",
   ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  entities: [User, Patient, Appointment, Slot, Doctor],
+  entities: [User, Patient, Appointment, Slot, Doctor, Session],
   migrations: ['src/database/migrations/*.ts'],
 });

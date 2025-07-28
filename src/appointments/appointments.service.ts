@@ -1,259 +1,201 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Appointment, AppointmentStatus } from 'src/entities/appointment.entity';
-import { Slot } from 'src/entities/slot.entity';
 import { Patient } from 'src/entities/patient.entity';
+import { Slot } from 'src/entities/slot.entity';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { RescheduleAppointmentDto } from './dto/reschedule-appointment.dto';
-import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
+import { Session } from 'src/entities/session.entity';
 
 @Injectable()
-export class AppointmentsService {
-    constructor(
-        @InjectRepository(Appointment)
-        private readonly appointmentRepo: Repository<Appointment>,
+export class AppointmentService {
+  constructor(
+    @InjectRepository(Appointment)
+    private appointmentRepo: Repository<Appointment>,
 
-        @InjectRepository(Slot)
-        private readonly slotRepo: Repository<Slot>,
+    @InjectRepository(Patient)
+    private patientRepo: Repository<Patient>,
 
-        @InjectRepository(Patient)
-        private readonly patientRepo: Repository<Patient>,
-    ) { }
+    @InjectRepository(Slot)
+    private slotRepo: Repository<Slot>,
 
-    async createAppointment(userId: string, dto: CreateAppointmentDto) {
-        // Step 1: Get the patient profile
-        const patient = await this.patientRepo.findOne({
-            where: { user: { id: userId } },
-            relations: ['user'],
-        });
+    @InjectRepository(Session)
+    private sessionRepo: Repository<Session>,
+  ) {}
 
-        if (!patient) throw new NotFoundException('Patient profile not found');
+  async createAppointment(userId: string, dto: CreateAppointmentDto) {
+    const patient = await this.patientRepo.findOne({
+      where: { user: { id: userId } },
+      relations: ['user'],
+    });
+    if (!patient) throw new NotFoundException('Patient not found');
 
-        // Step 2: Get the requested slot
-        const slot = await this.slotRepo.findOne({
-            where: { id: dto.slot_id },
-            relations: ['appointments', 'doctor'],
-        });
+    const slot = await this.slotRepo.findOne({
+      where: { id: dto.slot_id },
+      relations: ['appointments', 'session', 'doctor'],
+    });
+  
+    if (!slot) throw new NotFoundException('Slot not found');
 
-        if (!slot) throw new NotFoundException('Slot not found');
-        if (slot.is_booked) throw new BadRequestException('Slot already booked');
+    const session = slot.session;
+    if (!session) throw new BadRequestException('Slot must have a session');
 
-        // Step 3: Get all existing appointments of the patient with their slot details
-        const existingAppointments = await this.appointmentRepo.find({
-            where: { patient: { id: patient.id } },
-            relations: ['slot'],
-        });
-
-        const newStart = slot.start_time;
-        const newEnd = slot.end_time;
-        const newDay = slot.day;
-
-        // Step 4: Check for overlapping appointments
-        const isOverlapping = existingAppointments.some((appt) => {
-            const s = appt.slot;
-            return (
-                s.day === newDay &&
-                !(s.end_time <= newStart || s.start_time >= newEnd)
-            );
-        });
-
-        if (isOverlapping) {
-            throw new BadRequestException(
-                'You already have an overlapping appointment at this time.',
-            );
-        }
-        // Step 5: Create the appointment
-        const appointment = this.appointmentRepo.create({
-            patient,
-            slot,
-            status: AppointmentStatus.CONFIRMED,
-            appointment_reason: dto.appointment_reason ?? undefined,
-        });
-
-        // Step 6: Mark slot as booked (you can optionally check for max_bookings here)
-        slot.is_booked = true;
-        await this.slotRepo.save(slot);
-
-        const saved = await this.appointmentRepo.save(appointment);
-
-        // Step 7: Return clean response with IDs only
-        return {
-            appointment_id: saved.id,
-            patient_id: saved.patient.id,
-            doctor_id: saved.slot.doctor.id,
-            status: saved.status,
-            appointment_reason: saved.appointment_reason,
-            slot: {
-                id: appointment.slot.id,
-                day: appointment.slot.day,
-                start_time: appointment.slot.start_time,
-                end_time: appointment.slot.end_time,
-                is_booked: appointment.slot.is_booked
-            },
-        };
-    }
-
-
-    async getAllAppointments(
-        userId: string,
-        userRole: 'doctor' | 'patient',
-        status?: string,
-        page = 1,
-        limit = 10,
+    // Check within session timing
+    if (
+      slot.start_time < session.start_time ||
+      slot.end_time > session.end_time
     ) {
-        const skip = (page - 1) * limit;
-
-        const where: any = {};
-
-        if (status) where.status = status;
-
-        if (userRole === 'doctor') {
-            where.slot = { doctor: { user: { id: userId } } };
-        } else {
-            where.patient = { user: { id: userId } };
-        }
-
-        const [appointments, total] = await this.appointmentRepo.findAndCount({
-            where,
-            relations: {
-                patient: { user: true },
-                slot: { doctor: { user: true } },
-            },
-            order: { created_at: 'DESC' },
-            skip,
-            take: limit,
-        });
-
-        const data = appointments.map((appointment) => ({
-            appointment_id: appointment.id,
-            patient_id: appointment.patient.id,
-            doctor_id: appointment.slot.doctor.id,
-            status: appointment.status,
-            appointment_reason: appointment.appointment_reason,
-        }));
-
-        return { data, total, page, limit };
+      throw new BadRequestException('Slot must fall within session time');
     }
 
-
-    async getAppointmentById(id: string) {
-        const appointment = await this.appointmentRepo.findOne({
-            where: { id },
-            relations: {
-                patient: { user: true },
-                slot: { doctor: { user: true } },
-            },
-        });
-
-        if (!appointment) {
-            throw new NotFoundException('Appointment not found');
-        }
-
-        return {
-            appointment_id: appointment.id,
-            patient_id: appointment.patient.id,
-            doctor_id: appointment.slot.doctor.id,
-            status: appointment.status,
-            appointment_reason: appointment.appointment_reason,
-        };
+    // Check max booking
+    const totalBooked = await this.appointmentRepo.count({
+      where: { slot: { id: slot.id } },
+    });
+    if (totalBooked >= slot.max_bookings) {
+      throw new BadRequestException('Slot is already fully booked');
     }
 
-    async rescheduleAppointment(appointmentId: string, userId: string, dto: RescheduleAppointmentDto) {
-        const appointment = await this.appointmentRepo.findOne({
-            where: { id: appointmentId },
-            relations: ['patient', 'patient.user', 'slot', 'slot.doctor'],
-        });
+    // Overlap check
+    const existingAppointments = await this.appointmentRepo.find({
+      where: { patient: { id: patient.id } },
+      relations: ['slot', 'slot.session'],
+    });
 
-        if (!appointment) throw new NotFoundException('Appointment not found');
-        if (appointment.patient.user.id !== userId) throw new ForbiddenException('You can only reschedule your own appointments');
+    const overlaps = existingAppointments.some((appt) => {
+      const s = appt.slot;
+      const sess = s.session;
+      return (
+        sess.day === session.day &&
+        !(s.end_time <= slot.start_time || s.start_time >= slot.end_time)
+      );
+    });
 
-        const newSlot = await this.slotRepo.findOne({
-            where: { id: dto.new_slot_id },
-            relations: ['appointments'],
-        });
+    if (overlaps) {
+      throw new BadRequestException('You have overlapping appointment');
+    }
+   
+    const appointment = this.appointmentRepo.create({
+      patient,
+      slot,
+      status: AppointmentStatus.CONFIRMED,
+      appointment_reason: dto.appointment_reason,
+    });
 
-        if (!newSlot) throw new NotFoundException('New slot not found');
-        if (newSlot.is_booked) throw new BadRequestException('New slot is already booked');
+    const saved = await this.appointmentRepo.save(appointment);
 
-        // Free the old slot
-        appointment.slot.is_booked = false;
-        await this.slotRepo.save(appointment.slot);
-
-        // Book the new slot
-        newSlot.is_booked = true;
-        await this.slotRepo.save(newSlot);
-
-        // Update appointment
-        appointment.slot = newSlot;
-        appointment.status = AppointmentStatus.RESCHEDULED;
-        if (dto.appointment_reason) appointment.appointment_reason = dto.appointment_reason;
-
-        const saved = await this.appointmentRepo.save(appointment);
-
-        return {
-            appointment_id: saved.id,
-            status: saved.status,
-            appointment_reason: saved.appointment_reason,
-            New_slot: {
-                id: saved.slot.id,
-                day: saved.slot.day,
-                start_time: saved.slot.start_time,
-                end_time: saved.slot.end_time,
-                is_booked: saved.slot.is_booked
-            },
-        };
-
+    if (totalBooked + 1 >= slot.max_bookings) {
+      slot.is_booked = true;
+      await this.slotRepo.save(slot);
     }
 
-    async cancelAppointment(
-        appointmentId: string,
-        userId: string,
-        dto: CancelAppointmentDto,
-    ) {
-        const appointment = await this.appointmentRepo.findOne({
-            where: { id: appointmentId },
-            relations: {
-                patient: { user: true },
-                slot: true,
-            },
-        });
+    return {
+      appointment_id: saved.id,
+      slot_id: slot.id,
+      session_id: session.id,
+      doctor_id: slot.doctor.id,
+      status: saved.status,
+      reason: saved.appointment_reason,
+    };
+  }
 
-        if (!appointment) throw new NotFoundException('Appointment not found');
+  async rescheduleAppointment(appointmentId: string, userId: string, dto: RescheduleAppointmentDto) {
+    const appointment = await this.appointmentRepo.findOne({
+      where: { id: appointmentId },
+      relations: ['patient', 'patient.user', 'slot', 'slot.session', 'slot.doctor'],
+    });
 
-        // check permission (assuming only patient can cancel for now)
-        if (appointment.patient.user.id !== userId) {
-            throw new ForbiddenException('You are not allowed to cancel this appointment');
-        }
-        const slot = await this.slotRepo.findOne({
-            where: { id: appointment.slot.id },
-        });
+    if (!appointment) throw new NotFoundException('Appointment not found');
+    if (appointment.patient.user.id !== userId) throw new BadRequestException('Unauthorized');
 
-        if (!slot) {
-            throw new NotFoundException('Slot not found');
-        }
+    const oldSlot = appointment.slot;
+    const newSlot = await this.slotRepo.findOne({
+      where: { id: dto.new_slot_id },
+      relations: ['appointments', 'session', 'doctor'],
+    });
 
-        const slotStart = new Date(slot.start_time); // Convert string → Date
-        const now = new Date();
-        const cancelBefore = new Date(slotStart.getTime() - slot.cancel_before_hours * 60 * 60 * 1000);
+    if (!newSlot) throw new NotFoundException('New slot not found');
+    const session = newSlot.session;
 
-        if (now > cancelBefore) {
-            throw new BadRequestException('Cancellation time has passed');
-        }
+    const totalNewBookings = await this.appointmentRepo.count({
+      where: { slot: { id: newSlot.id } },
+    });
 
-
-        appointment.status = AppointmentStatus.CANCELLED;
-        appointment.cancellation_reason = dto.reason || 'Cancelled by patient';
-        appointment.slot.is_booked = false;
-
-        await this.slotRepo.save(appointment.slot);
-        const saved = await this.appointmentRepo.save(appointment);
-
-        return {
-            appointment_id: saved.id,
-            status: saved.status,
-            cancellation_reason: saved.cancellation_reason,
-        };
+    if (totalNewBookings >= newSlot.max_bookings) {
+      throw new BadRequestException('New slot is fully booked');
     }
 
+    appointment.slot = newSlot;
+    appointment.status = AppointmentStatus.RESCHEDULED;
+
+    const updated = await this.appointmentRepo.save(appointment);
+
+    // Free up old slot if needed
+    const remainingAppointments = await this.appointmentRepo.count({
+      where: { slot: { id: oldSlot.id } },
+    });
+
+    if (remainingAppointments < oldSlot.max_bookings) {
+      oldSlot.is_booked = false;
+      await this.slotRepo.save(oldSlot);
+    }
+
+    if (totalNewBookings + 1 >= newSlot.max_bookings) {
+      newSlot.is_booked = true;
+      await this.slotRepo.save(newSlot);
+    }
+
+    return {
+      message: 'Appointment rescheduled successfully',
+      appointment_id: updated.id,
+      slot_id: newSlot.id,
+    };
+  }
+
+  async cancelAppointment(appointmentId: string, userId: string, reason?: string) {
+    const appointment = await this.appointmentRepo.findOne({
+      where: { id: appointmentId },
+      relations: ['patient', 'patient.user', 'slot'],
+    });
+
+    if (!appointment) throw new NotFoundException('Appointment not found');
+    if (appointment.patient.user.id !== userId) {
+      throw new BadRequestException('Unauthorized');
+    }
+
+    appointment.status = AppointmentStatus.CANCELLED;
+    appointment.cancellation_reason = reason || "Patient's wish!";
+
+    const saved = await this.appointmentRepo.save(appointment);
+
+    // Free the slot if applicable
+    const countRemaining = await this.appointmentRepo.count({
+      where: { slot: { id: appointment.slot.id }, status: AppointmentStatus.CONFIRMED },
+    });
+
+    if (countRemaining < appointment.slot.max_bookings) {
+      appointment.slot.is_booked = false;
+      await this.slotRepo.save(appointment.slot);
+    }
+
+    return {
+      message: 'Appointment cancelled successfully',
+      appointment_id: saved.id,
+    };
+  }
+
+  async getAppointmentById(appointmentId: string) {
+    const appointment = await this.appointmentRepo.findOne({
+      where: { id: appointmentId },
+      relations: ['patient', 'patient.user', 'slot', 'slot.session', 'slot.doctor'],
+    });
+    if (!appointment) throw new NotFoundException('Appointment not found');
+    return appointment;
+  }
 }

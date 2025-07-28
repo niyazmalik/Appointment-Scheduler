@@ -1,48 +1,35 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { Doctor } from './doctor.entity';
 import { Appointment } from './appointment.entity';
-
-export enum Weekday {
-  SUNDAY = 'sunday',
-  MONDAY = 'monday',
-  TUESDAY = 'tuesday',
-  WEDNESDAY = 'wednesday',
-  THURSDAY = 'thursday',
-  FRIDAY = 'friday',
-  SATURDAY = 'saturday',
-}
+import { Session } from './session.entity';
 
 @Entity('slots')
 export class Slot {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @ManyToOne(() => Session, (session) => session.slots, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'session_id' })
+  session: Session;
+  
   @ManyToOne(() => Doctor, (doctor) => doctor.slots)
+  @JoinColumn({ name: 'doctor_id' })
   doctor: Doctor;
 
-  @Column({type: 'enum', enum: Weekday})
-  day: Weekday; 
+  @Column({ type: 'time' })
+  start_time: string;
 
-  @Column({type: 'time'})
-  start_time: string; 
-
-  @Column({type: 'time'})
+  @Column({ type: 'time' })
   end_time: string;
 
-  @Column({nullable: true })
-  cancel_before_hours: number;
-  
   @Column({ default: false })
   is_booked: boolean;
 
+  @Column({ type: 'int', default: 10 })
+  avg_consult_time: number;
+
   @Column({ type: 'int', default: 1 })
   max_bookings: number;
-
-  @Column({ type: 'timestamp' })
-  booking_start_at: Date;
-
-  @Column({ type: 'timestamp' })
-  booking_end_at: Date;
 
   @OneToMany(() => Appointment, (appointment) => appointment.slot)
   appointments: Appointment[];

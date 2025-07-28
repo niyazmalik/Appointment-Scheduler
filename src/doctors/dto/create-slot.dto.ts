@@ -1,10 +1,6 @@
-import { IsEnum, IsNotEmpty, IsString, IsOptional, IsNumber } from 'class-validator';
-import { Weekday } from 'src/entities/slot.entity';
+import { IsEnum, IsNotEmpty, IsString, IsOptional, IsNumber, IsInt, Min } from 'class-validator';
 
-export class CreateSlotDto { // I have not included is_booked beacuse by default it is false.
-  @IsEnum(Weekday)
-  @IsNotEmpty()
-  day: Weekday;
+export class CreateSlotDto {
 
   @IsString()
   @IsNotEmpty()
@@ -14,9 +10,9 @@ export class CreateSlotDto { // I have not included is_booked beacuse by default
   @IsNotEmpty()
   end_time: string;
 
-  @IsNumber()
-  @IsNotEmpty()
-  cancel_before_hours: number;
+  @IsInt()
+  @Min(1)
+  avg_consult_time: number;
 
   @IsOptional()
   @IsNumber()

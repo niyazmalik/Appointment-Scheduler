@@ -4,6 +4,7 @@ import {
   Column,
   ManyToOne,
   CreateDateColumn,
+  JoinColumn,
 } from 'typeorm';
 import { Patient } from './patient.entity';
 import { Slot } from './slot.entity';
@@ -20,9 +21,11 @@ export class Appointment {
   id: string;
 
   @ManyToOne(() => Patient, (patient) => patient.appointments)
+  @JoinColumn({ name: 'patient_id' })
   patient: Patient;
 
   @ManyToOne(() => Slot, (slot) => slot.appointments)
+  @JoinColumn({ name: 'slot_id' }) 
   slot: Slot;
 
   @Column({ type: 'enum', enum: AppointmentStatus, default: AppointmentStatus.CONFIRMED })
