@@ -76,8 +76,8 @@ export class DoctorsService {
     return {
       id: saved.id,
       day: saved.day,
-      start_time: saved.start_time,
-      end_time: saved.end_time,
+      start_time: saved.consult_start_time,
+      end_time: saved.consult_end_time,
     };
   }
 
@@ -104,8 +104,8 @@ export class DoctorsService {
 
     const slotStart = toTime(dto.start_time);
     const slotEnd = toTime(dto.end_time);
-    const sessionStart = toTime(session.start_time);
-    const sessionEnd = toTime(session.end_time);
+    const sessionStart = toTime(session.consult_start_time);
+    const sessionEnd = toTime(session.consult_end_time);
 
     if (slotStart >= slotEnd) {
       throw new BadRequestException('Slot start time must be before end time');
@@ -167,18 +167,18 @@ export class DoctorsService {
       throw new ForbiddenException('Unauthorized to update this session');
     }
 
-    const originalStart = session.start_time;
-    const originalEnd = session.end_time;
+    const originalStart = session.consult_start_time;
+    const originalEnd = session.consult_end_time;
 
-    const newStart = dto.start_time || originalStart;
-    const newEnd = dto.end_time || originalEnd;
+    const newStart = dto.consult_start_time || originalStart;
+    const newEnd = dto.consult_end_time || originalEnd;
 
     if (newStart >= newEnd) {
       throw new BadRequestException('start_time must be before end_time');
     }
 
-    const startChanged = dto.start_time && dto.start_time !== originalStart;
-    const endChanged = dto.end_time && dto.end_time !== originalEnd;
+    const startChanged = dto.consult_start_time && dto.consult_start_time!== originalStart;
+    const endChanged = dto.consult_end_time && dto.consult_end_time !== originalEnd;
 
     // Handling different scenarios...
     if (startChanged) {
@@ -190,8 +190,8 @@ export class DoctorsService {
     }
 
     // Now update
-    session.start_time = newStart;
-    session.end_time = newEnd;
+    session.consult_start_time = newStart;
+    session.consult_end_time = newEnd;
 
     const updated = await this.sessionRepo.save(session);
 
@@ -199,8 +199,8 @@ export class DoctorsService {
       message: 'Session updated successfully',
       data: {
         id: updated.id,
-        start_time: updated.start_time,
-        end_time: updated.end_time,
+        start_time: updated.consult_start_time,
+        end_time: updated.consult_end_time,
       },
     };
   }

@@ -32,13 +32,10 @@ export class Session {
   day: DayOfWeek;
 
   @Column({ type: 'time' })
-  start_time: string;
+  consult_start_time: string;
 
   @Column({ type: 'time' })
-  end_time: string;
-
-  @Column({ type: 'int', default: 60 })
-  booking_cutoff_minutes: number;
+  consult_end_time: string;
 
   @Column({ type: 'boolean', default: true })
   is_active: boolean;
