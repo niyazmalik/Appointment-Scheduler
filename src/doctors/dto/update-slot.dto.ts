@@ -1,4 +1,3 @@
-// src/doctors/dto/update-slot.dto.ts
 import { IsEnum, IsOptional, IsString, IsBoolean, IsNumber } from 'class-validator';
 import { Weekday } from 'src/entities/slot.entity';
 

@@ -14,17 +14,17 @@ export class DoctorsService {
 
     @InjectRepository(Doctor)
     private readonly doctorRepo: Repository<Doctor>,
-  ) {}
+  ) { }
 
   async getAllDoctors(search = '', page = 1, limit = 10) {
     const skip = (page - 1) * limit;
 
     const [data, total] = await this.doctorRepo.findAndCount({
       where: [
-            { user: { name: ILike(`%${search}%`) } },
-            { user: { email: ILike(`%${search}%`) } },
-            { user: { phone_number: ILike(`%${search}%`) } },
-        ],
+        { user: { name: ILike(`%${search}%`) } },
+        { user: { email: ILike(`%${search}%`) } },
+        { user: { phone_number: ILike(`%${search}%`) } },
+      ],
       relations: ['user'],
       skip,
       take: limit,
@@ -54,59 +54,57 @@ export class DoctorsService {
   }
 
   async createSlot(userId: string, dto: CreateSlotDto) {
-  const doctor = await this.doctorRepo.findOne({
-    where: { user: { id: userId } },
-  });
-  if (!doctor) throw new NotFoundException('Doctor profile not found');
+    const doctor = await this.doctorRepo.findOne({
+      where: { user: { id: userId } },
+    });
+    if (!doctor) throw new NotFoundException('Doctor profile not found');
 
-  // Check for overlapping slot
-  const existingSlot = await this.slotRepo
-    .createQueryBuilder('slot')
-    .where('slot.doctorId = :doctorId', { doctorId: doctor.id })
-    .andWhere('slot.day = :day', { day: dto.day })
-    .andWhere(
-      '(slot.start_time < :end_time AND slot.end_time > :start_time)',
-      {
-        start_time: dto.start_time,
-        end_time: dto.end_time,
-      },
-    )
-    .getOne();
+    // Check for overlapping slot
+    const existingSlot = await this.slotRepo
+      .createQueryBuilder('slot')
+      .where('slot.doctorId = :doctorId', { doctorId: doctor.id })
+      .andWhere('slot.day = :day', { day: dto.day })
+      .andWhere(
+        '(slot.start_time < :end_time AND slot.end_time > :start_time)',
+        {
+          start_time: dto.start_time,
+          end_time: dto.end_time,
+        },
+      )
+      .getOne();
 
-  if (existingSlot) {
-    throw new BadRequestException('Overlapping slot already exists for this day/time');
+    if (existingSlot) {
+      throw new BadRequestException('Overlapping slot already exists for this day/time');
+    }
+
+    const slot = this.slotRepo.create({ ...dto, doctor });
+    return this.slotRepo.save(slot);
   }
 
-  const slot = this.slotRepo.create({ ...dto, doctor });
-  return this.slotRepo.save(slot);
-}
+  async getDoctorSlots(doctorId: string, day?: Weekday) {
+    const where: any = {
+      doctor: { id: doctorId }
+    };
 
+    if (day) where.day = day.toLowerCase();
 
-  
-async getDoctorSlots(doctorId: string, day?: Weekday) {
-  const where: any = {
-    doctor: { id: doctorId }
-  };
+    return this.slotRepo.find({
+      where,
+      order: {
+        day: 'ASC',
+        start_time: 'ASC',
+      },
+    });
+  }
 
-  if (day) where.day = day.toLowerCase();
+  async getOwnSlotsByUserId(userId: string) {
+    const doctor = await this.doctorRepo.findOne({
+      where: { user: { id: userId } },
+    });
 
-  return this.slotRepo.find({
-    where,
-    order: {
-      day: 'ASC',
-      start_time: 'ASC',
-    },
-  });
-}
-
-async getOwnSlotsByUserId(userId: string) {
-  const doctor = await this.doctorRepo.findOne({
-    where: { user: { id: userId } },
-  });
-
-  if (!doctor) throw new NotFoundException('Doctor not found');
-  return this.getDoctorSlots(doctor.id);
-}
+    if (!doctor) throw new NotFoundException('Doctor not found');
+    return this.getDoctorSlots(doctor.id);
+  }
 
   async getSlotById(id: string) {
     const slot = await this.slotRepo.findOne({
