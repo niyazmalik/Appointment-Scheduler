@@ -39,6 +39,9 @@ export class Appointment {
   @Column({ nullable: true })
   cancellation_reason: string;
 
+  @Column({ type: 'time', nullable: true })
+  reporting_time: string;
+
   @CreateDateColumn()
   created_at: Date;
 }

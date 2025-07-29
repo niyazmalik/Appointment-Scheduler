@@ -185,11 +185,11 @@ export class DoctorsService {
 
     // Handling different scenarios...
     if (startChanged) {
-      await this.handleStartTimeShrink(session, newStart);
+      await this.handleStartTimeShrinkOrExpand(session, newStart);
     }
 
     if (endChanged) {
-      await this.handleEndTimeShrink(session, newEnd);
+      await this.handleEndTimeShrinkOrExpand(session, newEnd);
     }
 
     // Now update
@@ -208,107 +208,183 @@ export class DoctorsService {
     };
   }
 
-  private async handleStartTimeShrink(session: Session, newStartTime: string) {
-    const slotsToDelete: Slot[] = [];
-    const affectedAppointments: Appointment[] = [];
-
+  private async handleStartTimeShrinkOrExpand(session: Session, newStartTime: string) {
     const originalStartTime = session.consult_start_time;
+    const newStart = getTodayDateTime(newStartTime);
+    const originalStart = getTodayDateTime(originalStartTime);
 
-    for (const slot of session.slots) {
-      const slotStart = getTodayDateTime(slot.start_time);
-      const slotEnd = getTodayDateTime(slot.end_time);
-      const newStart = getTodayDateTime(newStartTime);
-      const originalStart = getTodayDateTime(originalStartTime);
+    const isShrink = newStart > originalStart;
 
-      if (
-        slotEnd <= newStart &&
-        slotStart >= originalStart
-      ) {
-        if (slot.appointments.length === 0) {
-          slotsToDelete.push(slot);
-        } else {
-          affectedAppointments.push(...slot.appointments);
+    if (isShrink) {
+      const slotsToDelete: Slot[] = [];
+      const affectedAppointments: Appointment[] = [];
+
+      for (const slot of session.slots) {
+        const slotStart = getTodayDateTime(slot.start_time);
+        const slotEnd = getTodayDateTime(slot.end_time);
+
+        if (slotStart >= originalStart && slotStart < newStart && slotEnd > newStart) {
+          const affected = slot.appointments.filter(app => {
+            const reportingTime = getTodayDateTime(app.reporting_time);
+            return reportingTime < newStart;
+          });
+
+          affectedAppointments.push(...affected);
+          continue;
+        }
+
+        if (slotEnd <= newStart && slotStart >= originalStart) {
+          if (slot.appointments.length === 0) {
+            slotsToDelete.push(slot);
+          } else {
+            affectedAppointments.push(...slot.appointments);
+          }
         }
       }
-    }
 
-    await this.slotRepo.remove(slotsToDelete);
+      await this.slotRepo.remove(slotsToDelete);
 
-    if (affectedAppointments.length > 0) {
-      const remainingSlots = session.slots.filter(
-        slot => getTodayDateTime(slot.start_time) >= getTodayDateTime(newStartTime)
-      );
-
-      const rescheduled: Appointment[] = [];
-      const pending: Appointment[] = [];
-
-      for (const appointment of affectedAppointments) {
-        const availableSlot = remainingSlots.find(
-          s => s.appointments.length < s.max_bookings
+      if (affectedAppointments.length > 0) {
+        const remainingSlots = session.slots.filter(
+          slot => getTodayDateTime(slot.start_time) >= newStart
         );
 
-        if (availableSlot) {
-          appointment.slot = availableSlot;
-          appointment.status = AppointmentStatus.RESCHEDULED;
-          rescheduled.push(appointment);
-        } else {
-          appointment.status = AppointmentStatus.PENDING_RESCHEDULE;
-          pending.push(appointment);
-        }
-      }
+        const rescheduled: Appointment[] = [];
+        const pending: Appointment[] = [];
 
-      await this.appointmentRepo.save([...rescheduled, ...pending]);
+        for (const appointment of affectedAppointments) {
+          const availableSlot = remainingSlots.find(
+            s => s.appointments.length + rescheduled.filter(a => a.slot.id === s.id).length < s.max_bookings
+          );
+
+          if (availableSlot) {
+            const totalBookings = availableSlot.appointments.length +
+              rescheduled.filter(a => a.slot.id === availableSlot.id).length;
+
+            if (totalBookings >= availableSlot.max_bookings) {
+              await this.slotRepo.update(availableSlot.id, { is_booked: true });
+            }
+
+            const reportingTimeDate = getTodayDateTime(availableSlot.start_time);
+            reportingTimeDate.setMinutes(
+              reportingTimeDate.getMinutes() + totalBookings * availableSlot.avg_consult_time,
+            );
+
+            appointment.reporting_time = reportingTimeDate.toTimeString().slice(0, 5);
+            appointment.slot = availableSlot;
+            appointment.status = AppointmentStatus.RESCHEDULED;
+
+            rescheduled.push(appointment);
+          } else {
+            appointment.status = AppointmentStatus.PENDING_RESCHEDULE;
+            pending.push(appointment);
+          }
+        }
+
+        await this.appointmentRepo.save([...rescheduled, ...pending]);
+      }
+    } else {
+
+      session.consult_start_time = newStartTime;
+      await this.sessionRepo.save(session);
+
+      return {
+        message: 'Session end time extended. New slots can now be added as needed.',
+      };
     }
   }
 
-  private async handleEndTimeShrink(session: Session, newEndTime: string) {
-    const slotsToDelete: Slot[] = [];
-    const affectedAppointments: Appointment[] = [];
-
+  private async handleEndTimeShrinkOrExpand(session: Session, newEndTime: string) {
     const originalEndTime = session.consult_end_time;
+    const originalEnd = getTodayDateTime(originalEndTime);
+    const newEnd = getTodayDateTime(newEndTime);
+    const isShrink = newEnd < originalEnd;
     const currentTime = new Date();
 
-    for (const slot of session.slots) {
-      const slotStart = getTodayDateTime(slot.start_time);
+    if (isShrink) {
+      const slotsToDelete: Slot[] = [];
+      const affectedAppointments: Appointment[] = [];
 
-      if (slotStart >= getTodayDateTime(newEndTime) && slotStart < getTodayDateTime(originalEndTime)) {
-        if (slot.appointments.length === 0) {
-          slotsToDelete.push(slot);
-        } else {
-          affectedAppointments.push(...slot.appointments);
-        }
-      }
-    }
-
-    await this.slotRepo.remove(slotsToDelete);
-
-    if (affectedAppointments.length > 0) {
-      const validSlotsForReschedule = session.slots.filter(slot => {
+      for (const slot of session.slots) {
         const slotStart = getTodayDateTime(slot.start_time);
-        const isWithinNewWindow = slotStart >= getTodayDateTime(session.consult_start_time) && slotStart < getTodayDateTime(newEndTime);
-        const isNotAttendedYet = slotStart >= currentTime;
-        return isWithinNewWindow && isNotAttendedYet;
-      });
+        const slotEnd = getTodayDateTime(slot.end_time);
 
-      const rescheduled: Appointment[] = [];
-      const pending: Appointment[] = [];
+        if (slotStart < newEnd && slotEnd > newEnd && slotEnd <= originalEnd) {
+          const affected = slot.appointments.filter(app => {
+            const reportingTime = getTodayDateTime(app.reporting_time);
+            return reportingTime > newEnd;
+          });
 
-      for (const appointment of affectedAppointments) {
-        const availableSlot = validSlotsForReschedule.find(
-          s => s.appointments.length < s.max_bookings
-        );
+          affectedAppointments.push(...affected);
+          continue;
+        }
 
-        if (availableSlot) {
-          appointment.slot = availableSlot;
-          appointment.status = AppointmentStatus.RESCHEDULED;
-          rescheduled.push(appointment);
-        } else {
-          appointment.status = AppointmentStatus.PENDING_RESCHEDULE;
-          pending.push(appointment);
+        if (slotStart >= newEnd && slotStart < originalEnd) {
+          if (slot.appointments.length === 0) {
+            slotsToDelete.push(slot);
+          } else {
+            affectedAppointments.push(...slot.appointments);
+          }
         }
       }
 
-      await this.appointmentRepo.save([...rescheduled, ...pending]);
+      await this.slotRepo.remove(slotsToDelete);
+
+      if (affectedAppointments.length > 0) {
+        const validSlotsForReschedule = session.slots.filter(slot => {
+          const slotStart = getTodayDateTime(slot.start_time);
+          const isWithinNewWindow = slotStart >= getTodayDateTime(session.consult_start_time) && slotStart < newEnd;
+          const isNotAttendedYet = slotStart >= currentTime;
+          return isWithinNewWindow && isNotAttendedYet;
+        });
+
+        const rescheduled: Appointment[] = [];
+        const pending: Appointment[] = [];
+
+        for (const appointment of affectedAppointments) {
+          const availableSlot = validSlotsForReschedule.find(s =>
+            s.appointments.length + rescheduled.filter(a => a.slot.id === s.id).length < s.max_bookings
+          );
+
+          if (availableSlot) {
+            const totalBookings = availableSlot.appointments.length + rescheduled.filter(a => a.slot.id === availableSlot.id).length;
+
+            if (totalBookings + 1 >= availableSlot.max_bookings) {
+              await this.slotRepo.update(availableSlot.id, { is_booked: true });
+            }
+
+            const reportingTimeDate = getTodayDateTime(availableSlot.start_time);
+            reportingTimeDate.setMinutes(
+              reportingTimeDate.getMinutes() + totalBookings * availableSlot.avg_consult_time,
+            );
+
+            appointment.reporting_time = reportingTimeDate.toTimeString().slice(0, 5);
+            appointment.slot = availableSlot;
+            appointment.status = AppointmentStatus.RESCHEDULED;
+            rescheduled.push(appointment);
+          } else {
+            appointment.status = AppointmentStatus.PENDING_RESCHEDULE;
+            pending.push(appointment);
+          }
+        }
+
+        await this.appointmentRepo.save([...rescheduled, ...pending]);
+      }
+
+      session.consult_end_time = newEndTime;
+      await this.sessionRepo.save(session);
+
+    } else {
+      session.consult_end_time = newEndTime;
+      await this.sessionRepo.save(session);
+
+      /*I could generate new slots here if needed
+        or just notify that new slots can be added manually
+        or could even handle Slot generation separately*/
+
+      return {
+        message: 'Session end time extended. New slots can now be added as needed.',
+      };
     }
   }
 }
