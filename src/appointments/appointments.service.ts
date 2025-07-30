@@ -80,12 +80,18 @@ export class AppointmentService {
         if (overlaps) {
             throw new BadRequestException('You have overlapping appointment');
         }
+        const reportingTimeDate = getTodayDateTime(slot.start_time);
+        reportingTimeDate.setMinutes(
+            reportingTimeDate.getMinutes() + totalBooked * slot.avg_consult_time,
+        );
+        const reporting_time = reportingTimeDate.toTimeString().slice(0, 5);
 
         const appointment = this.appointmentRepo.create({
             patient,
             slot,
             status: AppointmentStatus.CONFIRMED,
             appointment_reason: dto.appointment_reason,
+            reporting_time
         });
 
         const saved = await this.appointmentRepo.save(appointment);
@@ -101,6 +107,7 @@ export class AppointmentService {
             doctor_id: slot.doctor.id,
             status: saved.status,
             reason: saved.appointment_reason,
+            reporting_time
         };
     }
 
@@ -129,9 +136,14 @@ export class AppointmentService {
         if (totalNewBookings >= newSlot.max_bookings) {
             throw new BadRequestException('New slot is fully booked');
         }
-
+        const reportingTimeDate = getTodayDateTime(newSlot.start_time);
+        reportingTimeDate.setMinutes(
+            reportingTimeDate.getMinutes() + totalNewBookings * newSlot.avg_consult_time,
+        );
+        const reporting_time = reportingTimeDate.toTimeString().slice(0, 5);
         appointment.slot = newSlot;
         appointment.status = AppointmentStatus.RESCHEDULED;
+        appointment.reporting_time = reporting_time;
 
         const updated = await this.appointmentRepo.save(appointment);
 
@@ -152,6 +164,7 @@ export class AppointmentService {
             message: 'Appointment rescheduled successfully',
             appointment_id: updated.id,
             slot_id: newSlot.id,
+            reporting_time
         };
     }
 
@@ -177,7 +190,7 @@ export class AppointmentService {
         });
 
         if (countRemaining < appointment.slot.max_bookings) {
-           await this.slotRepo.update(appointment.slot.id, { is_booked: false });
+            await this.slotRepo.update(appointment.slot.id, { is_booked: false });
         }
 
         return {
@@ -194,4 +207,11 @@ export class AppointmentService {
         if (!appointment) throw new NotFoundException('Appointment not found');
         return appointment;
     }
+}
+
+function getTodayDateTime(timeStr: string): Date {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const now = new Date();
+    now.setHours(hours, minutes, 0, 0);
+    return now;
 }

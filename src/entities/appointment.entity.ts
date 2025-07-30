@@ -13,6 +13,8 @@ export enum AppointmentStatus {
   CONFIRMED = 'confirmed',
   CANCELLED = 'cancelled',
   RESCHEDULED = 'rescheduled',
+  MISSED = 'missed',
+  PENDING_RESCHEDULE = 'pending_reschedule',
 }
 
 @Entity('appointments')
@@ -36,6 +38,9 @@ export class Appointment {
 
   @Column({ nullable: true })
   cancellation_reason: string;
+
+  @Column({ type: 'time', nullable: true })
+  reporting_time: string;
 
   @CreateDateColumn()
   created_at: Date;
