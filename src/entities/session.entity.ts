@@ -37,6 +37,12 @@ export class Session {
   @Column({ type: 'time' })
   consult_end_time: string;
 
+  @Column({ type: 'time' })
+  booking_start_time: string;
+
+  @Column({ type: 'time' })
+  booking_end_time: string;
+
   @Column({ type: 'boolean', default: true })
   is_active: boolean;
 
