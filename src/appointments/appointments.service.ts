@@ -46,6 +46,14 @@ export class AppointmentService {
         const session = slot.session;
         if (!session) throw new BadRequestException('Slot must have a session');
 
+        const now = new Date();
+        const todayBookingStart = getTodayDateTime(session.booking_start_time);
+        const todayBookingEnd = getTodayDateTime(session.booking_end_time);
+
+        if (now < todayBookingStart || now > todayBookingEnd) {
+            throw new BadRequestException('Booking is not allowed at this time');
+        }
+
         // Check within session timing
         if (
             slot.start_time < session.consult_start_time ||
@@ -120,6 +128,15 @@ export class AppointmentService {
         if (!appointment) throw new NotFoundException('Appointment not found');
         if (appointment.patient.user.id !== userId) throw new BadRequestException('Unauthorized');
 
+        if (
+            appointment.status !== AppointmentStatus.CONFIRMED &&
+            appointment.status !== AppointmentStatus.MISSED &&
+            appointment.status !== AppointmentStatus.PENDING_RESCHEDULE
+        ) {
+            throw new BadRequestException('Only missed or pending appointments can be rescheduled');
+        }
+
+
         const oldSlot = appointment.slot;
         const newSlot = await this.slotRepo.findOne({
             where: { id: dto.new_slot_id },
@@ -147,7 +164,6 @@ export class AppointmentService {
 
         const updated = await this.appointmentRepo.save(appointment);
 
-        // Free up old slot if needed
         const remainingAppointments = await this.appointmentRepo.count({
             where: { slot: { id: oldSlot.id } },
         });
