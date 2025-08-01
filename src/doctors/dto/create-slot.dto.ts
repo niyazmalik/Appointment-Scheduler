@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsString, IsOptional, IsNumber, IsInt, Min } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, IsInt, Min } from 'class-validator';
 
 export class CreateSlotDto {
 

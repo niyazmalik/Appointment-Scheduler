@@ -1,20 +1,4 @@
-import { IsEnum, IsOptional, IsString, IsBoolean, IsNumber } from 'class-validator';
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateSlotDto } from './create-slot.dto';
 
-export class UpdateSlotDto {
-
-  @IsOptional()
-  @IsString()
-  start_time?: string;
-
-  @IsOptional()
-  @IsString()
-  end_time?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  is_booked?: boolean;
-
-  @IsOptional()
-  @IsNumber()
-  max_bookings?: number;
-}
+export class UpdateSlotDto extends PartialType(CreateSlotDto) {}
