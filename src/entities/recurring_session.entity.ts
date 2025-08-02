@@ -7,7 +7,8 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Doctor } from './doctor.entity';
-import { Session, DayOfWeek } from './session.entity';
+import { Session } from './session.entity';
+import { DayOfWeek } from 'src/enums/day.enum';
 
 @Entity('recurring_sessions')
 export class RecurringSession {
@@ -18,7 +19,7 @@ export class RecurringSession {
   @JoinColumn({ name: 'doctor_id' })
   doctor: Doctor;
 
-  @Column({ type: 'enum', enum: DayOfWeek })
+  @Column({ type: 'enum', enum: DayOfWeek, enumName: 'day_of_week' })
   day: DayOfWeek;
 
   @Column({ type: 'time' })

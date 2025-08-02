@@ -1,5 +1,5 @@
 import { IsEnum, IsInt, Matches, Min } from 'class-validator';
-import { DayOfWeek } from '../../entities/session.entity';
+import { DayOfWeek } from 'src/enums/day.enum';
 
 export class CreateRecurringSessionDto {
   @IsEnum(DayOfWeek)

@@ -2,7 +2,6 @@ import {
     BadRequestException,
     Injectable,
     NotFoundException,
-    InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -90,7 +89,7 @@ export class AppointmentService {
         }
         const reportingTimeDate = getTodayDateTime(slot.start_time);
         reportingTimeDate.setMinutes(
-            reportingTimeDate.getMinutes() + totalBooked * slot.avg_consult_time,
+            reportingTimeDate.getMinutes() + totalBooked * session.avg_consult_time,
         );
         const reporting_time = reportingTimeDate.toTimeString().slice(0, 5);
 
@@ -155,7 +154,7 @@ export class AppointmentService {
         }
         const reportingTimeDate = getTodayDateTime(newSlot.start_time);
         reportingTimeDate.setMinutes(
-            reportingTimeDate.getMinutes() + totalNewBookings * newSlot.avg_consult_time,
+            reportingTimeDate.getMinutes() + totalNewBookings * session.avg_consult_time,
         );
         const reporting_time = reportingTimeDate.toTimeString().slice(0, 5);
         appointment.slot = newSlot;

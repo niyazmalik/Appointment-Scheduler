@@ -1,5 +1,5 @@
 import { IsEnum, IsInt, IsBoolean, IsOptional, Min, Matches } from 'class-validator';
-import { DayOfWeek } from '../../entities/session.entity';
+import { DayOfWeek } from 'src/enums/day.enum';
 
 export class CreateSessionDto {
   @IsEnum(DayOfWeek)

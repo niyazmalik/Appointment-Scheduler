@@ -9,16 +9,7 @@ import {
 import { Doctor } from './doctor.entity';
 import { Slot } from './slot.entity';
 import { RecurringSession } from './recurring_session.entity';
-
-export enum DayOfWeek {
-  MONDAY = 'MONDAY',
-  TUESDAY = 'TUESDAY',
-  WEDNESDAY = 'WEDNESDAY',
-  THURSDAY = 'THURSDAY',
-  FRIDAY = 'FRIDAY',
-  SATURDAY = 'SATURDAY',
-  SUNDAY = 'SUNDAY',
-}
+import { DayOfWeek } from 'src/enums/day.enum';
 
 @Entity('sessions')
 export class Session {
@@ -33,7 +24,7 @@ export class Session {
   @JoinColumn({ name: 'recurring_session_id' })
   recurring_session: RecurringSession;
 
-  @Column({ type: 'enum', enum: DayOfWeek })
+  @Column({ type: 'enum', enum: DayOfWeek, enumName: 'session_day' })
   day: DayOfWeek;
 
   /* Required for recurring instances */

@@ -17,7 +17,7 @@ export class Patient {
     age: number
 
     @Column({nullable: true})
-    gender: 'MALE' | 'FEMALE' | 'OTHERS'
+    gender: 'MALE' | 'FEMALE'
 
     @Column({nullable: true})
     address: string
