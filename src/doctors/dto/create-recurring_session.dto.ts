@@ -1,7 +1,7 @@
-import { IsEnum, IsInt, IsBoolean, IsOptional, Min, Matches } from 'class-validator';
+import { IsEnum, IsInt, Matches, Min } from 'class-validator';
 import { DayOfWeek } from '../../entities/session.entity';
 
-export class CreateSessionDto {
+export class CreateRecurringSessionDto {
   @IsEnum(DayOfWeek)
   day: DayOfWeek;
 
@@ -20,8 +20,4 @@ export class CreateSessionDto {
   @IsInt()
   @Min(1)
   avg_consult_time: number;
-
-  @IsOptional()
-  @IsBoolean()
-  is_active?: boolean;
 }

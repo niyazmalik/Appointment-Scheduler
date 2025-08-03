@@ -148,7 +148,7 @@ export class DoctorsService {
         id: slot.id,
         start_time: slot.start_time,
         end_time: slot.end_time,
-        avg_consult_time: slot.avg_consult_time,
+        avg_consult_time: session.avg_consult_time,
         max_bookings: slot.max_bookings,
       },
     };
@@ -182,6 +182,12 @@ export class DoctorsService {
 
     const startChanged = dto.consult_start_time && dto.consult_start_time !== originalStart;
     const endChanged = dto.consult_end_time && dto.consult_end_time !== originalEnd;
+
+    const { consult_start_time, consult_end_time } = dto;
+
+    if (consult_start_time && consult_end_time && consult_start_time >= consult_end_time) {
+      throw new BadRequestException('Start time must be before end time.');
+    }
 
     // Handling different scenarios...
     if (startChanged) {
@@ -256,7 +262,7 @@ export class DoctorsService {
         adjusted.push(appointment);
         appointment.reporting_time = this.calculateReportingTime(
           availableSlot.start_time,
-          availableSlot.avg_consult_time,
+          session.avg_consult_time,
           totalBookings
         );
         bookingCountMap.set(availableSlot.id, adjustedCount + 1);
@@ -289,20 +295,25 @@ export class DoctorsService {
       originalEnd,
     );
 
-    /* if before booking even starts then I'll have empty slots which now will get deleted */
     await this.slotRepo.remove(slotsToDelete);
 
     if (affectedAppointments.length === 0) {
       return { message: 'Successfully deleted the slots!' };
     }
 
+    const validSlotsForAdjust = this.getValidSlotsForAdjustmentForEndShrink(session, newEnd, currentTime);
+    const bookingCountMap = new Map<string, number>();
+    const slotsToUpdate = new Set<Slot>();
+    const adjusted: Appointment[] = [];
+    const pending: Appointment[] = [];
+
     const isDoctorShrinkingDuringBooking = this.isDoctorShrinkingDuringBooking(session, currentTime);
 
     if (isDoctorShrinkingDuringBooking) {
       const consultStartTime = getTodayDateTime(session.consult_start_time);
       const totalAvailableMinutes = this.getTotalAvailableMinutes(consultStartTime, newEnd);
-
       const bookedAppointments = this.getBookedAppointments(session);
+
       const totalAppointments = bookedAppointments.length;
       const totalMaxBookings = this.getTotalMaxBookings(session);
 
@@ -313,15 +324,29 @@ export class DoctorsService {
           totalAvailableMinutes,
         );
       }
+      await this.handlePartialBookedCaseForEndShrink(
+        session,
+        affectedAppointments,
+        validSlotsForAdjust,
+        slotsToUpdate,
+        bookingCountMap,
+        adjusted,
+        pending
+      );
+
+      if (pending.length > 0) {
+        return await this.handleFullyBookedCaseForEndShrink(
+          pending,
+          consultStartTime,
+          totalAvailableMinutes
+        );
+      }
+
+      return {
+        adjusted: adjusted.map(a => a.id),
+        message: `All appointments adjusted successfully.`,
+      };
     }
-    /* then defenitly it is after the booking ends */
-    const validSlotsForAdjust = this.getValidSlotsForAdjustmentForEndShrink(session, newEnd, currentTime);
-
-    const adjusted: Appointment[] = [];
-    const pending: Appointment[] = [];
-
-    /* O(n2) -> O(n) as no need to use filter in loop */
-    const bookingCountMap = new Map<string, number>();
 
     for (const appointment of affectedAppointments) {
       const availableSlot = this.findAvailableSlotForAppointmentForEndShrink(validSlotsForAdjust, currentTime, bookingCountMap);
@@ -332,16 +357,17 @@ export class DoctorsService {
         const totalBookings = existingBookings + adjustedCount;
 
         if (totalBookings + 1 === availableSlot.max_bookings) {
-          await this.slotRepo.update(availableSlot.id, { is_booked: true });
+          availableSlot.is_booked = true;
+          slotsToUpdate.add(availableSlot);
         }
 
         appointment.slot = availableSlot;
-        adjusted.push(appointment);
         appointment.reporting_time = this.calculateReportingTime(
           availableSlot.start_time,
-          availableSlot.avg_consult_time,
+          session.avg_consult_time,
           totalBookings
         );
+        adjusted.push(appointment);
         bookingCountMap.set(availableSlot.id, adjustedCount + 1);
 
       } else {
@@ -349,7 +375,10 @@ export class DoctorsService {
         pending.push(appointment);
       }
     }
+
+    await this.slotRepo.save([...slotsToUpdate]);
     await this.appointmentRepo.save([...adjusted, ...pending]);
+
     return {
       adjusted: adjusted.map(a => a.id),
       pending: pending.map(a => a.id),
@@ -408,7 +437,6 @@ export class DoctorsService {
       }
 
       await this.appointmentRepo.save(bookedAppointments);
-
       return {
         message: 'All appointments adjusted with reduced consult time.',
       };
@@ -422,20 +450,63 @@ export class DoctorsService {
           consultStartTime.getTime() + i * 5 * 60 * 1000,
         );
         app.reporting_time = newReportingTime.toTimeString().slice(0, 5);
-        app.status = AppointmentStatus.RESCHEDULED;
       }
 
       unfitAppointments.forEach(a => (a.status = AppointmentStatus.PENDING_RESCHEDULE));
 
       const allAppointmentsToSave = [...adjustable, ...unfitAppointments];
       await this.appointmentRepo.save(allAppointmentsToSave);
-
-
       return {
         message: `Only ${maxAppointmentsPossible} appointments could be adjusted. ${unfitAppointments.length} need manual reschedule.`,
         reschedule_required: unfitAppointments.map(a => a.id),
       };
     }
+  }
+
+  private async handlePartialBookedCaseForEndShrink(
+    session: Session,
+    affectedAppointments: Appointment[],
+    validSlotsForAdjust: Slot[],
+    slotsToUpdate: Set<Slot>,
+    bookingCountMap: Map<string, number>,
+    adjusted: Appointment[],
+    pending: Appointment[]
+  ) {
+
+    let slotIndex = validSlotsForAdjust.length - 1;
+
+    for (const appointment of affectedAppointments.reverse()) {
+      while (slotIndex >= 0) {
+        const slot = validSlotsForAdjust[slotIndex];
+        const adjustedCount = bookingCountMap.get(slot.id) || 0;
+        const totalBookings = slot.appointments.length + adjustedCount;
+
+        if (totalBookings < slot.max_bookings) {
+          appointment.slot = slot;
+          appointment.reporting_time = this.calculateReportingTime(
+            slot.start_time,
+            session.avg_consult_time,
+            totalBookings,
+          );
+          bookingCountMap.set(slot.id, adjustedCount + 1);
+          adjusted.push(appointment);
+
+          if (totalBookings + 1 === slot.max_bookings) {
+            slot.is_booked = true;
+            slotsToUpdate.add(slot);
+          }
+          break;
+        } else {
+          slotIndex--;
+        }
+      }
+
+      if (!appointment.slot) {
+        pending.push(appointment);
+      }
+    }
+    await this.slotRepo.save([...slotsToUpdate]);
+    await this.appointmentRepo.save([...adjusted, ...pending]);
   }
 
   private getValidSlotsForAdjustmentForEndShrink(session: Session, newEnd: Date, currentTime: Date): Slot[] {

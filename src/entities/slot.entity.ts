@@ -25,9 +25,6 @@ export class Slot {
   @Column({ default: false })
   is_booked: boolean;
 
-  @Column({ type: 'int', default: 10 })
-  avg_consult_time: number;
-
   @Column({ type: 'int', default: 1 })
   max_bookings: number;
 
