@@ -15,7 +15,6 @@ import { DoctorsService } from './doctors.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
-import { UpdateSlotDto } from './dto/update-slot.dto';
 import { CreateSlotDto } from './dto/create-slot.dto';
 
 import { Request } from 'express';
@@ -54,6 +53,17 @@ export class DoctorsController {
   ) {
     const user = req.user as User;
     return this.doctorsService.createSlotInSession(user.id, sessionId, dto);
+  }
+
+  @Get('sessions/:id/slots')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('doctor', 'patient')
+  async getSlotsInSession(
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as User;
+    return this.doctorsService.getSlotsInSession(user.id, sessionId);
   }
 
   @Patch('sessions/:id')

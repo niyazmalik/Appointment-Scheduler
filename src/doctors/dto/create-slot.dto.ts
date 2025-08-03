@@ -10,10 +10,6 @@ export class CreateSlotDto {
   @IsNotEmpty()
   end_time: string;
 
-  @IsInt()
-  @Min(1)
-  avg_consult_time: number;
-
   @IsOptional()
   @IsNumber()
   max_bookings?: number;

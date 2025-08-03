@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { ILike, In, Repository } from 'typeorm';
 import { Doctor } from '../entities/doctor.entity';
 import { Slot } from '../entities/slot.entity';
 import { CreateSlotDto } from './dto/create-slot.dto';
@@ -65,6 +65,7 @@ export class DoctorsService {
   async createSession(userId: string, dto: CreateSessionDto) {
     const doctor = await this.doctorRepo.findOne({
       where: { user: { id: userId } },
+      relations: ['user'],
     });
 
     if (!doctor) throw new NotFoundException('Doctor profile not found');
@@ -154,6 +155,49 @@ export class DoctorsService {
     };
   }
 
+  async deleteSlotInSession(doctorId: string, sessionId: string, slotId: string) {
+    const slot = await this.slotRepo.findOne({
+      where: { id: slotId },
+      relations: { session: true, doctor: true },
+    });
+
+    if (!slot) throw new NotFoundException('Slot not found');
+    if (slot.session.id !== sessionId) throw new ForbiddenException('Slot not in this session');
+    if (slot.doctor.id !== doctorId) throw new ForbiddenException('You cannot delete this slot');
+    if (slot.is_booked) throw new BadRequestException('Cannot delete a booked slot');
+
+    await this.slotRepo.remove(slot);
+    return { message: 'Slot deleted successfully' };
+  }
+
+  async getSlotsInSession(userId: string, sessionId: string) {
+    const doctor = await this.doctorRepo.findOne({
+      where: { user: { id: userId } },
+    });
+
+    if (!doctor) throw new NotFoundException('Doctor not found');
+
+    const session = await this.sessionRepo.findOne({
+      where: { id: sessionId },
+      relations: ['doctor'],
+    });
+
+    if (!session) throw new NotFoundException('Session not found');
+    if (session.doctor.id !== doctor.id)
+      throw new ForbiddenException('You are not authorized to view slots of this session');
+
+    const slots = await this.slotRepo.find({
+      where: { session: { id: sessionId } },
+      relations: ['appointments'],
+      order: { start_time: 'ASC' },
+    });
+
+    return {
+      message: 'Slots fetched successfully',
+      data: slots,
+    };
+  }
+
   async updateSession(
     doctorUserId: string,
     sessionId: string,
@@ -161,7 +205,12 @@ export class DoctorsService {
   ) {
     const session = await this.sessionRepo.findOne({
       where: { id: sessionId },
-      relations: ['doctor', 'slots', 'slots.appointments'],
+      relations: ['doctor', 'doctor.user', 'slots', 'slots.appointments'],
+      order: {
+        slots: {
+          start_time: 'ASC',
+        },
+      },
     });
 
     if (!session) throw new NotFoundException('Session not found');
@@ -189,95 +238,21 @@ export class DoctorsService {
       throw new BadRequestException('Start time must be before end time.');
     }
 
-    // Handling different scenarios...
     if (startChanged) {
       await this.handleStartTimeShrinkOrExpand(session, newStart);
     }
 
     if (endChanged) {
-      await this.handleEndTimeShrinkOrExpand(session, newEnd);
+      return await this.handleEndTimeShrinkOrExpand(session, newEnd);
     }
-
-    session.consult_start_time = newStart;
-    session.consult_end_time = newEnd;
-
-    const updated = await this.sessionRepo.save(session);
-
-    return {
-      message: 'Session updated successfully',
-      data: {
-        id: updated.id,
-        start_time: updated.consult_start_time,
-        end_time: updated.consult_end_time,
-      },
-    };
   }
 
+/***************************************************************************************************************************
+ *                                                 HERE IT BEGINS...                                                                                                     *
+ ***************************************************************************************************************************/
+
   private async handleStartTimeShrinkOrExpand(session: Session, newStartTime: string) {
-    const { isShrink, newStart, originalStart, currentTime } = this.getContextForStartShrink(session, newStartTime);
-
-    if (!isShrink) {
-      return {
-        message: 'Session start time expanded. You may add new slots before this time.',
-      };
-    }
-
-    const { affectedAppointments, slotsToDelete } = this.extractAffectedAppointmentsAndDeletableSlotsFromStart(
-      session,
-      newStart,
-      originalStart);
-
-    await this.slotRepo.remove(slotsToDelete);
-
-    if (affectedAppointments.length === 0) {
-      return { message: 'Successfully deleted the slots!' };
-    }
-
-    const isDoctorShrinkingDuringBooking = this.isDoctorShrinkingDuringBooking(session, currentTime);
-
-    if (isDoctorShrinkingDuringBooking) {
-
-    }
-
-    const remainingSlotsForAdjust = this.getRemainingSlotsForAdjustmentForStartShrink(session, newStart);
-
-    const adjusted: Appointment[] = [];
-    const pending: Appointment[] = [];
-
-    const bookingCountMap = new Map<string, number>();
-
-    for (const appointment of affectedAppointments) {
-      const availableSlot = this.getAvailableSlotForStartShrink(remainingSlotsForAdjust, bookingCountMap);
-
-      if (availableSlot) {
-        const existingBookings = availableSlot.appointments.length;
-        const adjustedCount = bookingCountMap.get(availableSlot.id) || 0;
-        const totalBookings = existingBookings + adjustedCount;
-
-        if (totalBookings + 1 === availableSlot.max_bookings) {
-          await this.slotRepo.update(availableSlot.id, { is_booked: true });
-        }
-
-        appointment.slot = availableSlot;
-        adjusted.push(appointment);
-        appointment.reporting_time = this.calculateReportingTime(
-          availableSlot.start_time,
-          session.avg_consult_time,
-          totalBookings
-        );
-        bookingCountMap.set(availableSlot.id, adjustedCount + 1);
-
-      } else {
-        appointment.status = AppointmentStatus.PENDING_RESCHEDULE;
-        pending.push(appointment);
-      }
-    }
-    await this.appointmentRepo.save([...adjusted, ...pending]);
-    return {
-      adjusted: adjusted.map(a => a.id),
-      pending: pending.map(a => a.id),
-      message: `Adjusted ${adjusted.length} appointments, ${pending.length} require manual reschedule.`,
-    };
+      // will handle it once other one is done...
   }
 
   private async handleEndTimeShrinkOrExpand(session: Session, newEndTime: string) {
@@ -295,10 +270,14 @@ export class DoctorsService {
       originalEnd,
     );
 
-    await this.slotRepo.remove(slotsToDelete);
-
     if (affectedAppointments.length === 0) {
-      return { message: 'Successfully deleted the slots!' };
+      session.consult_end_time = newEndTime;
+      await this.sessionRepo.save(session);
+      await this.slotRepo.delete(slotsToDelete.map(s => s.id));
+      return {
+        deleted_slots: slotsToDelete,
+        message: 'Successfully deleted the slots!'
+      };
     }
 
     const validSlotsForAdjust = this.getValidSlotsForAdjustmentForEndShrink(session, newEnd, currentTime);
@@ -320,8 +299,14 @@ export class DoctorsService {
       if (totalAppointments === totalMaxBookings) {
         return await this.handleFullyBookedCaseForEndShrink(
           bookedAppointments,
+          totalAppointments,
+          bookingCountMap,
           consultStartTime,
           totalAvailableMinutes,
+          session,
+          newEndTime,
+          slotsToUpdate,
+          slotsToDelete
         );
       }
       await this.handlePartialBookedCaseForEndShrink(
@@ -334,16 +319,33 @@ export class DoctorsService {
         pending
       );
 
+      session.consult_end_time = newEndTime;
+      await this.sessionRepo.save(session);
+      await this.slotRepo.save([...slotsToUpdate]);
+      await this.appointmentRepo.save([...adjusted]);
+      console.log(pending);
+      console.log(adjusted);
+
       if (pending.length > 0) {
+        const safeAppointments = this.getBookedAppointments(session);
+        const bookedAppointments = [...safeAppointments, ...pending];
+        const totalAppointments = bookedAppointments.length;
+
         return await this.handleFullyBookedCaseForEndShrink(
-          pending,
+          bookedAppointments,
+          totalAppointments,
+          bookingCountMap,
           consultStartTime,
-          totalAvailableMinutes
+          totalAvailableMinutes,
+          session,
+          newEndTime,
+          slotsToUpdate,
+          slotsToDelete
         );
       }
 
+      await this.slotRepo.delete(slotsToDelete.map(s => s.id));
       return {
-        adjusted: adjusted.map(a => a.id),
         message: `All appointments adjusted successfully.`,
       };
     }
@@ -375,13 +377,11 @@ export class DoctorsService {
         pending.push(appointment);
       }
     }
-
+    session.consult_end_time = newEndTime;
+    await this.sessionRepo.save(session);
     await this.slotRepo.save([...slotsToUpdate]);
     await this.appointmentRepo.save([...adjusted, ...pending]);
-
     return {
-      adjusted: adjusted.map(a => a.id),
-      pending: pending.map(a => a.id),
       message: `Adjusted ${adjusted.length} appointments, ${pending.length} require manual reschedule.`,
     };
   }
@@ -412,34 +412,70 @@ export class DoctorsService {
   private isDoctorShrinkingDuringBooking(session: Session, currentTime: Date): boolean {
     const bookingStart = getTodayDateTime(session.booking_start_time);
     const consultStart = getTodayDateTime(session.consult_start_time);
-    const bufferBeforeConsult = new Date(consultStart.getTime() - 2 * 60 * 60 * 1000); // 2 hours before consult
+    const bufferBeforeConsult = new Date(consultStart.getTime() - 2 * 60 * 60 * 1000);
 
     return currentTime >= bookingStart && currentTime <= bufferBeforeConsult;
   }
 
   private async handleFullyBookedCaseForEndShrink(
     bookedAppointments: Appointment[],
+    totalAppointments: number,
+    bookingCountMap: Map<string, number>,
     consultStartTime: Date,
     totalAvailableMinutes: number,
+    session: Session,
+    newEndTime: string,
+    slotsToUpdate: Set<Slot>,
+    slotsToDelete: Slot[],
   ) {
-    const totalAppointments = bookedAppointments.length;
     const maxAppointmentsPossible = Math.floor(totalAvailableMinutes / 5);
+    const dynamicConsultTime = Math.floor(totalAvailableMinutes / totalAppointments);
+
+    if (!session.slots.length) {
+      throw new Error('No slots found for session.');
+    }
+    const oneSlot = session.slots[0];
+    const slotStart = getTodayDateTime(oneSlot.start_time);
+    const slotEnd = getTodayDateTime(oneSlot.end_time);
+    const slotDurationInMinutes = (slotEnd.getTime() - slotStart.getTime()) / (1000 * 60);
+    const maxBookingsPerSlot = Math.floor(slotDurationInMinutes / dynamicConsultTime);
 
     if (maxAppointmentsPossible >= totalAppointments) {
-      const dynamicConsultTime = Math.floor(totalAvailableMinutes / totalAppointments);
-
       for (let i = 0; i < totalAppointments; i++) {
         const app = bookedAppointments[i];
         const newReportingTime = new Date(
           consultStartTime.getTime() + i * dynamicConsultTime * 60 * 1000,
         );
         app.reporting_time = newReportingTime.toTimeString().slice(0, 5);
-      }
 
-      await this.appointmentRepo.save(bookedAppointments);
+        const matchingSlot = session.slots.find(slot => {
+          return (
+            newReportingTime >= getTodayDateTime(slot.start_time) &&
+            newReportingTime < getTodayDateTime(slot.end_time)
+          );
+        });
+
+        if (!matchingSlot) {
+          throw new Error(`No matching slot found for reporting time ${newReportingTime}`);
+        }
+
+        app.slot = matchingSlot;
+
+        const currentCount = bookingCountMap.get(matchingSlot.id) || 0;
+        bookingCountMap.set(matchingSlot.id, currentCount + 1);
+
+        if (currentCount + 1 === maxBookingsPerSlot) {
+          matchingSlot.is_booked = true;
+          matchingSlot.max_bookings = maxBookingsPerSlot;
+          slotsToUpdate.add(matchingSlot);
+        }
+      }
+      session.avg_consult_time = dynamicConsultTime;
+      await this.saveSessionAndDeleteSlots(session, newEndTime, slotsToDelete, slotsToUpdate, bookedAppointments);
       return {
         message: 'All appointments adjusted with reduced consult time.',
       };
+
     } else {
       const adjustable = bookedAppointments.slice(0, maxAppointmentsPossible);
       const unfitAppointments = bookedAppointments.slice(maxAppointmentsPossible);
@@ -450,12 +486,34 @@ export class DoctorsService {
           consultStartTime.getTime() + i * 5 * 60 * 1000,
         );
         app.reporting_time = newReportingTime.toTimeString().slice(0, 5);
+        const matchingSlot = session.slots.find(slot => {
+          return (
+            newReportingTime >= getTodayDateTime(slot.start_time) &&
+            newReportingTime < getTodayDateTime(slot.end_time)
+          );
+        });
+
+        if (!matchingSlot) {
+          throw new Error(`No matching slot found for reporting time ${newReportingTime}`);
+        }
+
+        app.slot = matchingSlot;
+
+        const currentCount = bookingCountMap.get(matchingSlot.id) || 0;
+        bookingCountMap.set(matchingSlot.id, currentCount + 1);
+
+        if (currentCount + 1 === maxBookingsPerSlot) {
+          matchingSlot.is_booked = true;
+          matchingSlot.max_bookings = maxBookingsPerSlot;
+          slotsToUpdate.add(matchingSlot);
+        }
       }
 
       unfitAppointments.forEach(a => (a.status = AppointmentStatus.PENDING_RESCHEDULE));
-
       const allAppointmentsToSave = [...adjustable, ...unfitAppointments];
-      await this.appointmentRepo.save(allAppointmentsToSave);
+      session.avg_consult_time = dynamicConsultTime;
+
+      await this.saveSessionAndDeleteSlots(session, newEndTime, slotsToDelete, slotsToUpdate, allAppointmentsToSave);
       return {
         message: `Only ${maxAppointmentsPossible} appointments could be adjusted. ${unfitAppointments.length} need manual reschedule.`,
         reschedule_required: unfitAppointments.map(a => a.id),
@@ -482,12 +540,7 @@ export class DoctorsService {
         const totalBookings = slot.appointments.length + adjustedCount;
 
         if (totalBookings < slot.max_bookings) {
-          appointment.slot = slot;
-          appointment.reporting_time = this.calculateReportingTime(
-            slot.start_time,
-            session.avg_consult_time,
-            totalBookings,
-          );
+          this.updateAppointmentSlotAndTime(appointment, slot, session, totalBookings);
           bookingCountMap.set(slot.id, adjustedCount + 1);
           adjusted.push(appointment);
 
@@ -499,14 +552,12 @@ export class DoctorsService {
         } else {
           slotIndex--;
         }
-      }
+      } 1
 
       if (!appointment.slot) {
         pending.push(appointment);
       }
     }
-    await this.slotRepo.save([...slotsToUpdate]);
-    await this.appointmentRepo.save([...adjusted, ...pending]);
   }
 
   private getValidSlotsForAdjustmentForEndShrink(session: Session, newEnd: Date, currentTime: Date): Slot[] {
@@ -520,12 +571,6 @@ export class DoctorsService {
     });
   }
 
-  private getRemainingSlotsForAdjustmentForStartShrink(session: Session, newStart: Date): Slot[] {
-    return session.slots.filter(
-      slot => getTodayDateTime(slot.start_time) >= newStart
-    );
-  }
-
   private findAvailableSlotForAppointmentForEndShrink(validSlots: Slot[], currentTime: Date, bookingMap: Map<string, number>): Slot | undefined {
     return validSlots.find(slot => {
       const slotStart = getTodayDateTime(slot.start_time);
@@ -536,13 +581,6 @@ export class DoctorsService {
 
       const hasSpace = totalBookings < slot.max_bookings;
       return hasSpace && isAfterBuffer;
-    });
-  }
-
-  private getAvailableSlotForStartShrink(remainingSlots: Slot[], bookingCountMap: Map<string, number>): Slot | undefined {
-    return remainingSlots.find(slot => {
-      const adjustedCount = bookingCountMap.get(slot.id) || 0;
-      return slot.appointments.length + adjustedCount < slot.max_bookings;
     });
   }
 
@@ -566,47 +604,16 @@ export class DoctorsService {
       }
 
       else if (slotStart >= newEnd && slotStart < originalEnd) {
-        if (slot.appointments.length === 0) {
-          slotsToDelete.push(slot);
-        } else {
+        if (slot.appointments.length !== 0) {
           affectedAppointments.push(...slot.appointments);
         }
+        slotsToDelete.push(slot);
       }
 
       else {
         break;
       }
     }
-    return { affectedAppointments, slotsToDelete };
-  }
-
-  private extractAffectedAppointmentsAndDeletableSlotsFromStart(session: Session, newStart: Date, originalStart: Date,): { affectedAppointments: Appointment[]; slotsToDelete: Slot[] } {
-    const affectedAppointments: Appointment[] = [];
-    const slotsToDelete: Slot[] = [];
-
-    for (let i = 0; i < session.slots.length; i++) {
-      const slot = session.slots[i];
-      const slotStart = getTodayDateTime(slot.start_time);
-      const slotEnd = getTodayDateTime(slot.end_time);
-
-      if (slotEnd > newStart && slotStart < newStart && slotStart >= originalStart) {
-        const affected = slot.appointments.filter(app => {
-          const reportingTime = getTodayDateTime(app.reporting_time);
-          return reportingTime < newStart;
-        });
-        affectedAppointments.push(...affected);
-        break;
-      } else if (slotEnd <= newStart && slotEnd > originalStart) {
-        if (slot.appointments.length === 0) {
-          slotsToDelete.push(slot);
-        } else {
-          affectedAppointments.push(...slot.appointments);
-        }
-      } else {
-        break;
-      }
-    }
-
     return { affectedAppointments, slotsToDelete };
   }
 
@@ -619,14 +626,28 @@ export class DoctorsService {
     return { originalEnd, newEnd, isShrink, currentTime };
   }
 
-  private getContextForStartShrink(session: Session, newStartTime: string) {
-    const originalStartTime = session.consult_start_time;
-    const newStart = getTodayDateTime(newStartTime);
-    const originalStart = getTodayDateTime(originalStartTime);
-    const currentTime = new Date();
+  private updateAppointmentSlotAndTime(
+    appointment: Appointment,
+    slot: Slot,
+    session: Session,
+    totalBookings: number,
+  ) {
+    appointment.slot = slot;
+    appointment.reporting_time = this.calculateReportingTime(
+      slot.start_time,
+      session.avg_consult_time,
+      totalBookings,
+    );
+  }
 
-    const isShrink = newStart > originalStart;
-    return { isShrink, newStart, originalStart, currentTime };
+  private async saveSessionAndDeleteSlots(session: Session, newEndTime: string, slotsToDelete: Slot[], slotsToUpdate: Set<Slot>, appointments: Appointment[]) {
+    session.consult_end_time = newEndTime;
+    await this.sessionRepo.save(session);
+    await this.slotRepo.save([...slotsToUpdate]);
+    await this.appointmentRepo.save(appointments);
+    if (slotsToDelete.length > 0) {
+      await this.slotRepo.delete(slotsToDelete.map((s) => s.id));
+    }
   }
 }
 
