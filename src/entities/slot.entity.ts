@@ -12,7 +12,7 @@ export class Slot {
   @JoinColumn({ name: 'session_id' })
   session: Session;
   
-  @ManyToOne(() => Doctor, (doctor) => doctor.slots)
+  @ManyToOne(() => Doctor, (doctor) => doctor.slots, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'doctor_id' })
   doctor: Doctor;
 

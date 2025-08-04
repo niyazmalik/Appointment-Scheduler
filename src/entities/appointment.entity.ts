@@ -22,11 +22,11 @@ export class Appointment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Patient, (patient) => patient.appointments)
+  @ManyToOne(() => Patient, (patient) => patient.appointments, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'patient_id' })
   patient: Patient;
 
-  @ManyToOne(() => Slot, (slot) => slot.appointments)
+  @ManyToOne(() => Slot, (slot) => slot.appointments, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'slot_id' }) 
   slot: Slot;
 

@@ -8,7 +8,7 @@ export class PatientSignupDto extends BaseSignupDto {
 
   @IsString()
   @IsNotEmpty()
-  gender: 'MALE' | 'FEMALE' | 'OTHERS';
+  gender: 'MALE' | 'FEMALE';
 
   @IsString()
   @IsOptional()
