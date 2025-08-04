@@ -23,9 +23,6 @@ export class AppointmentService {
 
         @InjectRepository(Slot)
         private slotRepo: Repository<Slot>,
-
-        @InjectRepository(Session)
-        private sessionRepo: Repository<Session>,
     ) { }
 
     async createAppointment(userId: string, dto: CreateAppointmentDto) {
@@ -53,7 +50,6 @@ export class AppointmentService {
             throw new BadRequestException('Booking is not allowed at this time');
         }
 
-        // Check within session timing
         if (
             slot.start_time < session.consult_start_time ||
             slot.end_time > session.consult_end_time
@@ -61,7 +57,6 @@ export class AppointmentService {
             throw new BadRequestException('Slot must fall within session time');
         }
 
-        // Check max booking
         const totalBooked = await this.appointmentRepo.count({
             where: { slot: { id: slot.id } },
         });
@@ -69,7 +64,6 @@ export class AppointmentService {
             throw new BadRequestException('Slot is already fully booked');
         }
 
-        // Overlap check
         const existingAppointments = await this.appointmentRepo.find({
             where: { patient: { id: patient.id } },
             relations: ['slot', 'slot.session'],
@@ -199,7 +193,6 @@ export class AppointmentService {
 
         const saved = await this.appointmentRepo.save(appointment);
 
-        // Free the slot if applicable
         const countRemaining = await this.appointmentRepo.count({
             where: { slot: { id: appointment.slot.id }, status: AppointmentStatus.CONFIRMED },
         });
