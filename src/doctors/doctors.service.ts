@@ -237,7 +237,6 @@ export class DoctorsService {
 
   private async handleEndTimeShrinkOrExpand(session: Session, newEndTime: string) {
     const { originalEnd, newEnd, isShrink, currentTime } = this.getContextForEndShrink(session, newEndTime);
-    console.log(currentTime, newEnd, isShrink);
 
     if (!isShrink) {
       return {
@@ -304,11 +303,15 @@ export class DoctorsService {
       await this.sessionRepo.save(session);
       await this.slotRepo.save([...slotsToUpdate]);
       await this.appointmentRepo.save([...adjusted]);
-
+      console.log(adjusted);
       if (pending.length > 0) {
-        const safeAppointments = this.getBookedAppointments(session);
-        const bookedAppointments = [...safeAppointments, ...pending];
+        const allAppointments = [...this.getBookedAppointments(session), ...pending];
+        const bookedAppointments = Array.from(
+          new Map(allAppointments.map(a => [a.id, a])).values()
+        );
+        console.log(this.getBookedAppointments(session));
         const totalAppointments = bookedAppointments.length;
+        console.log(bookedAppointments);
 
         return await this.handleFullyBookedCaseForEndShrink(
           bookedAppointments,
@@ -331,7 +334,7 @@ export class DoctorsService {
 
     for (const appointment of affectedAppointments) {
       const availableSlot = this.findAvailableSlotForAppointmentForEndShrink(validSlotsForAdjust, currentTime, bookingCountMap);
-
+      console.log(availableSlot);
       if (availableSlot) {
         const existingBookings = availableSlot.appointments.length;
         const adjustedCount = bookingCountMap.get(availableSlot.id) || 0;
@@ -344,7 +347,7 @@ export class DoctorsService {
 
         appointment.slot = availableSlot;
         appointment.reporting_time = this.calculateReportingTime(
-          availableSlot.start_time,
+          availableSlot.start_time.slice(0, 5),
           session.avg_consult_time,
           totalBookings
         );
@@ -441,7 +444,7 @@ export class DoctorsService {
     const slotEnd = oneSlot.end_time.slice(0, 5);
     const slotDurationInMinutes = this.getTotalAvailableMinutes(slotStart, slotEnd);
     const maxBookingsPerSlot = Math.floor(slotDurationInMinutes / dynamicConsultTime);
-
+    console.log(maxAppointmentsPossible, dynamicConsultTime);
     if (maxAppointmentsPossible >= totalAppointments) {
       for (let i = 0; i < totalAppointments; i++) {
         const app = bookedAppointments[i];
@@ -486,6 +489,7 @@ export class DoctorsService {
     } else {
       const adjustable = bookedAppointments.slice(0, maxAppointmentsPossible);
       const unfitAppointments = bookedAppointments.slice(maxAppointmentsPossible);
+      console.log(adjustable, unfitAppointments);
 
       for (let i = 0; i < adjustable.length; i++) {
         const app = adjustable[i];
@@ -545,10 +549,9 @@ export class DoctorsService {
     adjusted: Appointment[],
     pending: Appointment[]
   ) {
-
     let slotIndex = validSlotsForAdjust.length - 1;
 
-    for (const appointment of affectedAppointments.reverse()) {
+    for (const appointment of affectedAppointments) { /*removing reverse logic for now*/
       while (slotIndex >= 0) {
         const slot = validSlotsForAdjust[slotIndex];
         const adjustedCount = bookingCountMap.get(slot.id) || 0;
@@ -567,7 +570,7 @@ export class DoctorsService {
         } else {
           slotIndex--;
         }
-      } 1
+      }
 
       if (!appointment.slot) {
         pending.push(appointment);
@@ -577,11 +580,18 @@ export class DoctorsService {
 
   private getValidSlotsForAdjustmentForEndShrink(session: Session, newEnd: String, currentTime: string): Slot[] {
     const consultStart = session.consult_start_time.slice(0, 5);
-
+    console.log("fetching some valid slots for adjustments: ");
     return session.slots.filter(slot => {
       const slotStart = slot.start_time.slice(0, 5);
       const isWithinNewWindow = slotStart >= consultStart && slotStart < newEnd;
       const isNotAttendedYet = slotStart >= currentTime;
+      console.log('Checking slot:', {
+        id: slot.id,
+        start_time: slot.start_time,
+        isWithinNewWindow,
+        isNotAttendedYet,
+      });
+
       return isWithinNewWindow && isNotAttendedYet;
     });
   }
@@ -589,12 +599,18 @@ export class DoctorsService {
   private findAvailableSlotForAppointmentForEndShrink(validSlots: Slot[], currentTime: string, bookingMap: Map<string, number>): Slot | undefined {
     return validSlots.find(slot => {
       const slotStart = slot.start_time.slice(0, 5);
-      const isAfterBuffer = this.getTotalAvailableMinutes(slotStart, currentTime) >= 60 * 60 * 1000;
+      const isAfterBuffer = this.getTotalAvailableMinutes(currentTime, slotStart) >= 15;
 
       const adjustedCount = bookingMap.get(slot.id) || 0;
       const totalBookings = slot.appointments.length + adjustedCount;
-
       const hasSpace = totalBookings < slot.max_bookings;
+      console.log({
+        slot_id: slot.id,
+        start_time: slot.start_time,
+        totalBookings,
+        is_after_buffer: isAfterBuffer,
+      });
+
       return hasSpace && isAfterBuffer;
     });
   }
@@ -656,7 +672,7 @@ export class DoctorsService {
   ) {
     appointment.slot = slot;
     appointment.reporting_time = this.calculateReportingTime(
-      slot.start_time,
+      slot.start_time.slice(0, 5),
       session.avg_consult_time,
       totalBookings,
     );
