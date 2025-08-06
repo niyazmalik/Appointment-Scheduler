@@ -26,9 +26,9 @@ export class Appointment {
   @JoinColumn({ name: 'patient_id' })
   patient: Patient;
 
-  @ManyToOne(() => Slot, (slot) => slot.appointments, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Slot, (slot) => slot.appointments, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'slot_id' }) 
-  slot: Slot;
+  slot: Slot | null;
 
   @Column({ type: 'enum', enum: AppointmentStatus, default: AppointmentStatus.CONFIRMED })
   status: AppointmentStatus;

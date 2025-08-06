@@ -32,6 +32,17 @@ export class AppointmentsController {
         return this.appointmentsService.rescheduleAppointment(id, user.id, dto);
     }
 
+    @Patch(':id/cancel')
+    @Roles('patient')
+    async cancelAppointment(
+        @Param('id') id: string,
+        @Req() req: Request,
+        @Body() dto: CancelAppointmentDto,
+    ) {
+        const user = req.user as User;
+        return this.appointmentsService.cancelAppointment(id, user.id, dto);
+    }
+
     @Get(':id')
     async getAppointmentById(
         @Param('id', new ParseUUIDPipe()) id: string,

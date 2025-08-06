@@ -10,7 +10,7 @@ import { Patient } from 'src/entities/patient.entity';
 import { Slot } from 'src/entities/slot.entity';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { RescheduleAppointmentDto } from './dto/reschedule-appointment.dto';
-import { Session } from 'src/entities/session.entity';
+import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 
 @Injectable()
 export class AppointmentService {
@@ -71,11 +71,13 @@ export class AppointmentService {
 
         const overlaps = existingAppointments.some((appt) => {
             const s = appt.slot;
-            const sess = s.session;
-            return (
-                sess.day === session.day &&
-                !(s.end_time <= slot.start_time || s.start_time >= slot.end_time)
-            );
+            if (s) {
+                const sess = s.session;
+                return (
+                    sess.day === session.day &&
+                    !(s.end_time <= slot.start_time || s.start_time >= slot.end_time)
+                );
+            }
         });
 
         if (overlaps) {
@@ -129,7 +131,6 @@ export class AppointmentService {
             throw new BadRequestException('Only missed or pending appointments can be rescheduled');
         }
 
-
         const oldSlot = appointment.slot;
         const newSlot = await this.slotRepo.findOne({
             where: { id: dto.new_slot_id },
@@ -157,12 +158,14 @@ export class AppointmentService {
 
         const updated = await this.appointmentRepo.save(appointment);
 
-        const remainingAppointments = await this.appointmentRepo.count({
-            where: { slot: { id: oldSlot.id } },
-        });
+        if (oldSlot) {
+            const remainingAppointments = await this.appointmentRepo.count({
+                where: { slot: { id: oldSlot.id } },
+            });
 
-        if (remainingAppointments < oldSlot.max_bookings) {
-            await this.slotRepo.update(oldSlot.id, { is_booked: false });
+            if (remainingAppointments < oldSlot.max_bookings) {
+                await this.slotRepo.update(oldSlot.id, { is_booked: false });
+            }
         }
 
         if (totalNewBookings + 1 >= newSlot.max_bookings) {
@@ -177,7 +180,7 @@ export class AppointmentService {
         };
     }
 
-    async cancelAppointment(appointmentId: string, userId: string, reason?: string) {
+    async cancelAppointment(appointmentId: string, userId: string, dto: CancelAppointmentDto) {
         const appointment = await this.appointmentRepo.findOne({
             where: { id: appointmentId },
             relations: ['patient', 'patient.user', 'slot'],
@@ -189,16 +192,18 @@ export class AppointmentService {
         }
 
         appointment.status = AppointmentStatus.CANCELLED;
-        appointment.cancellation_reason = reason || "Patient's wish!";
+        appointment.cancellation_reason = dto.reason || "Patient's wish!";
 
         const saved = await this.appointmentRepo.save(appointment);
 
-        const countRemaining = await this.appointmentRepo.count({
-            where: { slot: { id: appointment.slot.id }, status: AppointmentStatus.CONFIRMED },
-        });
+        if (appointment.slot) {
+            const countRemaining = await this.appointmentRepo.count({
+                where: { slot: { id: appointment.slot.id }, status: AppointmentStatus.CONFIRMED || AppointmentStatus.RESCHEDULED },
+            });
 
-        if (countRemaining < appointment.slot.max_bookings) {
-            await this.slotRepo.update(appointment.slot.id, { is_booked: false });
+            if (countRemaining < appointment.slot.max_bookings) {
+                await this.slotRepo.update(appointment.slot.id, { is_booked: false });
+            }
         }
 
         return {

@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -16,7 +15,6 @@ import { JwtAuthGuard } from 'src/common/guards/jwt.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { CreateSlotDto } from './dto/create-slot.dto';
-
 import { Request } from 'express';
 import { User } from 'src/entities/user.entity';
 import { CreateSessionDto } from './dto/create-session.dto';
@@ -77,5 +75,4 @@ export class DoctorsController {
     const user = req.user as User;
     return this.doctorsService.updateSession(user.id, sessionId, dto);
   }
-
 }
