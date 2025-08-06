@@ -309,9 +309,8 @@ export class DoctorsService {
         const bookedAppointments = Array.from(
           new Map(allAppointments.map(a => [a.id, a])).values()
         );
-        console.log(this.getBookedAppointments(session));
-        const totalAppointments = bookedAppointments.length;
         console.log(bookedAppointments);
+        const totalAppointments = bookedAppointments.length;
 
         return await this.handleFullyBookedCaseForEndShrink(
           bookedAppointments,
@@ -415,7 +414,7 @@ export class DoctorsService {
 
     const [hours, minutes] = consultStart.split(':').map(Number);
     const baseDate = new Date(1970, 0, 1, hours, minutes);
-    const bufferBeforeConsult = new Date(baseDate.getTime() - 2 * 60 * 60 * 1000);
+    const bufferBeforeConsult = new Date(baseDate.getTime() - 1 * 60 * 60 * 1000);
 
     const bufferTimeStr = bufferBeforeConsult.toTimeString().slice(0, 5);
 

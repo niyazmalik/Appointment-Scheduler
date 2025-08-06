@@ -4,7 +4,7 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Appointment, AppointmentStatus } from 'src/entities/appointment.entity';
 import { Patient } from 'src/entities/patient.entity';
 import { Slot } from 'src/entities/slot.entity';
@@ -190,22 +190,25 @@ export class AppointmentService {
         if (appointment.patient.user.id !== userId) {
             throw new BadRequestException('Unauthorized');
         }
-
+        const isSlot = appointment.slot;
+        appointment.slot = null;
         appointment.status = AppointmentStatus.CANCELLED;
         appointment.cancellation_reason = dto.reason || "Patient's wish!";
 
         const saved = await this.appointmentRepo.save(appointment);
 
-        if (appointment.slot) {
+        if (isSlot) {
             const countRemaining = await this.appointmentRepo.count({
-                where: { slot: { id: appointment.slot.id }, status: AppointmentStatus.CONFIRMED || AppointmentStatus.RESCHEDULED },
+                where: {
+                    slot: { id: isSlot.id },
+                    status: In([AppointmentStatus.CONFIRMED, AppointmentStatus.RESCHEDULED]),
+                },
             });
 
-            if (countRemaining < appointment.slot.max_bookings) {
-                await this.slotRepo.update(appointment.slot.id, { is_booked: false });
+            if (countRemaining < isSlot.max_bookings) {
+                await this.slotRepo.update(isSlot.id, { is_booked: false });
             }
         }
-
         return {
             message: 'Appointment cancelled successfully',
             appointment_id: saved.id,
