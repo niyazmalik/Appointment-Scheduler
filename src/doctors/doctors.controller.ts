@@ -76,11 +76,11 @@ export class DoctorsController {
     return this.doctorsService.updateSession(user.id, sessionId, dto);
   }
 
-  @Get(':id/sessions/available')
+  @Get(':id/sessions')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('patient', 'doctor')
   getAvailableSessions(
     @Param('id', ParseUUIDPipe) doctorId: string) {
-    return this.doctorsService.getNextAvailableSessions(doctorId);
+    return this.doctorsService.getUpcomingSessionsWithBookability(doctorId);
   }
 }

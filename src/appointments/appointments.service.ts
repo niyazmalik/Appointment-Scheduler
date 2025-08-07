@@ -4,13 +4,15 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
 import { Appointment, AppointmentStatus } from 'src/entities/appointment.entity';
 import { Patient } from 'src/entities/patient.entity';
 import { Slot } from 'src/entities/slot.entity';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { RescheduleAppointmentDto } from './dto/reschedule-appointment.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
+import { Session } from 'src/entities/session.entity';
+import dayjs from 'dayjs';
 
 @Injectable()
 export class AppointmentService {
@@ -23,6 +25,9 @@ export class AppointmentService {
 
         @InjectRepository(Slot)
         private slotRepo: Repository<Slot>,
+
+        @InjectRepository(Session)
+        private sessionRepo: Repository<Session>,
     ) { }
 
     async createAppointment(userId: string, dto: CreateAppointmentDto) {
@@ -43,10 +48,16 @@ export class AppointmentService {
         if (!session) throw new BadRequestException('Slot must have a session');
 
         const now = new Date();
-        const todayBookingStart = getTodayDateTime(session.booking_start_time);
-        const todayBookingEnd = getTodayDateTime(session.booking_end_time);
+        const currentTime = now.toLocaleTimeString('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: 'Asia/Kolkata',
+        });
+        const todayBookingStart = session.booking_start_time.slice(0, 5);
+        const todayBookingEnd = session.booking_end_time.slice(0, 5);
 
-        if (now < todayBookingStart || now > todayBookingEnd) {
+        if (currentTime < todayBookingStart || currentTime > todayBookingEnd) {
             throw new BadRequestException('Booking is not allowed at this time');
         }
 
@@ -55,6 +66,38 @@ export class AppointmentService {
             slot.end_time > session.consult_end_time
         ) {
             throw new BadRequestException('Slot must fall within session time');
+        }
+
+        const today = dayjs().format('YYYY-MM-DD')
+
+        const upcomingSessions = await this.sessionRepo.find({
+            where: {
+                doctor: { id: slot.doctor.id },
+                is_active: true,
+                session_date: MoreThanOrEqual(today),
+            },
+            relations: ['slots'],
+            order: { session_date: 'ASC' },
+        });
+
+        let firstAvailableSession: Session | null = null;
+
+        for (const s of upcomingSessions) {
+            const hasFreeSlot = s.slots.some(
+                (sl) => !sl.is_booked && sl.max_bookings > 0
+            );
+            if (hasFreeSlot) {
+                firstAvailableSession = s;
+                break;
+            }
+        }
+
+        if (!firstAvailableSession) {
+            throw new BadRequestException('No available session for booking');
+        }
+
+        if (session.id !== firstAvailableSession.id) {
+            throw new BadRequestException('Only the earliest available session is bookable');
         }
 
         const totalBooked = await this.appointmentRepo.count({
@@ -83,11 +126,15 @@ export class AppointmentService {
         if (overlaps) {
             throw new BadRequestException('You have overlapping appointment');
         }
-        const reportingTimeDate = getTodayDateTime(slot.start_time);
-        reportingTimeDate.setMinutes(
-            reportingTimeDate.getMinutes() + totalBooked * session.avg_consult_time,
-        );
-        const reporting_time = reportingTimeDate.toTimeString().slice(0, 5);
+
+        const [h, m] = slot.start_time.split(':').map(Number);
+        const baseMinutes = h * 60 + m;
+        const reportingMinutes = baseMinutes + totalBooked * session.avg_consult_time;
+
+        const reportingHour = Math.floor(reportingMinutes / 60);
+        const reportingMinute = reportingMinutes % 60;
+
+        const reporting_time = `${reportingHour.toString().padStart(2, '0')}:${reportingMinute.toString().padStart(2, '0')}`;
 
         const appointment = this.appointmentRepo.create({
             patient,
@@ -99,7 +146,7 @@ export class AppointmentService {
 
         const saved = await this.appointmentRepo.save(appointment);
 
-        if (totalBooked + 1 >= slot.max_bookings) {
+        if (totalBooked + 1 === slot.max_bookings) {
             await this.slotRepo.update(slot.id, { is_booked: true });
         }
 

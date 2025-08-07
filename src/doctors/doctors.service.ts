@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { ILike, MoreThanOrEqual, Repository } from 'typeorm';
 import { Doctor } from '../entities/doctor.entity';
 import { Slot } from '../entities/slot.entity';
 import { CreateSlotDto } from './dto/create-slot.dto';
@@ -8,6 +8,7 @@ import { CreateSessionDto } from './dto/create-session.dto';
 import { Session } from '../entities/session.entity';
 import { UpdateSessionDto } from './dto/update-session.dto';
 import { Appointment, AppointmentStatus } from 'src/entities/appointment.entity';
+import dayjs from 'dayjs';
 
 @Injectable()
 export class DoctorsService {
@@ -176,27 +177,35 @@ export class DoctorsService {
     };
   }
 
-  async getNextAvailableSessions(doctorId: string) {
+  async getUpcomingSessionsWithBookability(doctorId: string) {
+    const today = dayjs().format('YYYY-MM-DD');
     const sessions = await this.sessionRepo.find({
-      where: { doctor: { id: doctorId } },
-      relations: ['slots', 'slots.appointments'],
-      order: { 
-        session_date: 'ASC',
-        consult_start_time: 'ASC' },
+      where: {
+        doctor: { id: doctorId },
+        is_active: true,
+        session_date: MoreThanOrEqual(today),
+      },
+      relations: ['slots'],
+      order: { session_date: 'ASC' },
     });
 
-    const result: Session[] = [];
-    for (const session of sessions) {
-      result.push(session);
+    let foundFirstBookable = false;
 
-      const hasFreeSlot = session.slots.some((slot) => {
-        const bookingsCount = slot.appointments?.length || 0;
-        return bookingsCount < slot.max_bookings;
-      });
+    return sessions.map((session) => {
+      const freeSlots = session.slots.filter((s) => !s.is_booked);
 
-      if (hasFreeSlot) break;
-    }
-    return result;
+      const isFullyBooked = freeSlots.length === 0;
+
+      const isBookable = !foundFirstBookable && !isFullyBooked;
+
+      if (isBookable) foundFirstBookable = true;
+
+      return {
+        ...session,
+        is_fully_booked: isFullyBooked,
+        is_bookable: isBookable,
+      };
+    });
   }
 
   async updateSession(
