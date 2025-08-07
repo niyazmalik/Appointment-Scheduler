@@ -3,27 +3,21 @@ import {
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
-  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { Doctor } from './doctor.entity';
-import { Slot } from './slot.entity';
 import { DayOfWeek } from 'src/enums/day.enum';
-import { RecurringSession } from './recurring-session.entity';
 
-@Entity('sessions')
-export class Session {
+@Entity('recurring_sessions')
+export class RecurringSession {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Doctor, (doctor) => doctor.sessions, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Doctor, (doctor) => doctor.recurring_sessions, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'doctor_id' })
   doctor: Doctor;
 
-  @Column({ type: 'date' })
-  session_date: string;
-
-  @Column({ type: 'enum', enum: DayOfWeek, enumName: 'session_day' })
+  @Column({ type: 'enum', enum: DayOfWeek, enumName: 'recurring_day' })
   day: DayOfWeek;
 
   @Column({ type: 'time' })
@@ -43,10 +37,4 @@ export class Session {
 
   @Column({ type: 'boolean', default: true })
   is_active: boolean;
-
-  @ManyToOne(() => RecurringSession, { nullable: true, onDelete: 'SET NULL' })
-  recurring_template: RecurringSession;
-
-  @OneToMany(() => Slot, (slot) => slot.session, { cascade: true })
-  slots: Slot[];
 }

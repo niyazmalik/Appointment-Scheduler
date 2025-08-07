@@ -12,6 +12,8 @@ import { PatientsModule } from './patients/patients.module';
 import { DoctorsModule } from './doctors/doctors.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { Session } from './entities/session.entity';
+import { RecurringSession } from './entities/recurring-session.entity';
+import { RecurringSessionModule } from './recurring-session/recurring-session.module';
 
 @Module({
   imports: [
@@ -25,7 +27,7 @@ import { Session } from './entities/session.entity';
         username: configService.get<string>('DATABASE_USER') || 'neondb_owner',
         password: configService.get<string>('DATABASE_PASSWORD'),
         database: configService.get<string>('DATABASE_NAME') || 'healthcare_backend_db',
-        entities: [User, Doctor, Patient, Slot, Appointment, Session],
+        entities: [User, Doctor, Patient, Slot, Appointment, Session, RecurringSession],
         synchronize: false,
         logging: false,
         retryAttempts: 3,
@@ -42,6 +44,7 @@ import { Session } from './entities/session.entity';
     PatientsModule,
     DoctorsModule,
     AppointmentsModule,
+    RecurringSessionModule
   ],
  })
 export class AppModule {}

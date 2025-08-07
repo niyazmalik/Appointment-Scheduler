@@ -176,6 +176,29 @@ export class DoctorsService {
     };
   }
 
+  async getNextAvailableSessions(doctorId: string) {
+    const sessions = await this.sessionRepo.find({
+      where: { doctor: { id: doctorId } },
+      relations: ['slots', 'slots.appointments'],
+      order: { 
+        session_date: 'ASC',
+        consult_start_time: 'ASC' },
+    });
+
+    const result: Session[] = [];
+    for (const session of sessions) {
+      result.push(session);
+
+      const hasFreeSlot = session.slots.some((slot) => {
+        const bookingsCount = slot.appointments?.length || 0;
+        return bookingsCount < slot.max_bookings;
+      });
+
+      if (hasFreeSlot) break;
+    }
+    return result;
+  }
+
   async updateSession(
     doctorUserId: string,
     sessionId: string,
@@ -282,7 +305,6 @@ export class DoctorsService {
           bookedAppointments,
           totalAppointments,
           bookingCountMap,
-          consultStartTime,
           totalAvailableMinutes,
           session,
           newEndTime,
@@ -316,7 +338,6 @@ export class DoctorsService {
           bookedAppointments,
           totalAppointments,
           bookingCountMap,
-          consultStartTime,
           totalAvailableMinutes,
           session,
           newEndTime,
@@ -425,115 +446,81 @@ export class DoctorsService {
     bookedAppointments: Appointment[],
     totalAppointments: number,
     bookingCountMap: Map<string, number>,
-    consultStartTime: string,
     totalAvailableMinutes: number,
     session: Session,
     newEndTime: string,
     slotsToUpdate: Set<Slot>,
     slotsToDelete: Slot[],
   ) {
-    const maxAppointmentsPossible = Math.floor(totalAvailableMinutes / 5);
     const dynamicConsultTime = Math.floor(totalAvailableMinutes / totalAppointments);
 
     if (!session.slots.length) {
       throw new Error('No slots found for session.');
     }
-    const oneSlot = session.slots[0];
-    const slotStart = oneSlot.start_time.slice(0, 5);
-    const slotEnd = oneSlot.end_time.slice(0, 5);
-    const slotDurationInMinutes = this.getTotalAvailableMinutes(slotStart, slotEnd);
-    const maxBookingsPerSlot = Math.floor(slotDurationInMinutes / dynamicConsultTime);
-  
-    if (maxAppointmentsPossible >= totalAppointments) {
-      for (let i = 0; i < totalAppointments; i++) {
-        const app = bookedAppointments[i];
-        const [hours, minutes] = consultStartTime.split(':').map(Number);
-        const baseDate = new Date(1970, 0, 1, hours, minutes);
 
-        const newReportingTime = new Date(
-          baseDate.getTime() + i * dynamicConsultTime * 60 * 1000,
-        );
+    const assignableAppointments: Appointment[] = [];
+    const unfitAppointments: Appointment[] = [];
 
+    let appIndex = 0;
+
+    for (const slot of session.slots) {
+      const slotStart = slot.start_time.slice(0, 5);
+      const slotEnd = slot.end_time.slice(0, 5);
+      const slotDuration = this.getTotalAvailableMinutes(slotStart, slotEnd);
+
+      const maxBookingsInThisSlot = Math.floor(slotDuration / dynamicConsultTime);
+      const [h, m] = slotStart.split(':').map(Number);
+      const baseDate = new Date(1970, 0, 1, h, m);
+
+      let count = 0;
+
+      while (count < maxBookingsInThisSlot && appIndex < bookedAppointments.length) {
+        const app = bookedAppointments[appIndex];
+        const newReportingTime = new Date(baseDate.getTime() + count * dynamicConsultTime * 60000);
         const reporting_time = newReportingTime.toTimeString().slice(0, 5);
+
         app.reporting_time = reporting_time;
+        app.slot = slot;
 
-        const matchingSlot = session.slots.find(slot => {
-          return (
-            reporting_time >= slot.start_time.slice(0, 5) &&
-            reporting_time < slot.end_time.slice(0, 5)
-          );
-        });
+        const currentCount = bookingCountMap.get(slot.id) || 0;
+        bookingCountMap.set(slot.id, currentCount + 1);
 
-        if (!matchingSlot) {
-          throw new Error(`No matching slot found for reporting time ${newReportingTime}`);
-        }
+        assignableAppointments.push(app);
 
-        app.slot = matchingSlot;
-
-        const currentCount = bookingCountMap.get(matchingSlot.id) || 0;
-        bookingCountMap.set(matchingSlot.id, currentCount + 1);
-
-        if (currentCount + 1 === maxBookingsPerSlot) {
-          matchingSlot.is_booked = true;
-          matchingSlot.max_bookings = maxBookingsPerSlot;
-          slotsToUpdate.add(matchingSlot);
-        }
+        count++;
+        appIndex++;
       }
-      session.avg_consult_time = dynamicConsultTime;
-      await this.saveSessionAndDeleteSlots(session, newEndTime, slotsToDelete, slotsToUpdate, bookedAppointments);
+
+      if (count === maxBookingsInThisSlot) {
+        slot.is_booked = true;
+        slot.max_bookings = maxBookingsInThisSlot;
+        slotsToUpdate.add(slot);
+      }
+
+      if (appIndex >= bookedAppointments.length) break;
+    }
+
+    if (appIndex < bookedAppointments.length) {
+      const remaining = bookedAppointments.slice(appIndex);
+      for (const app of remaining) {
+        app.status = AppointmentStatus.PENDING_RESCHEDULE;
+        app.slot = null;
+        unfitAppointments.push(app);
+      }
+    }
+    session.avg_consult_time = dynamicConsultTime;
+
+    const allToSave = [...assignableAppointments, ...unfitAppointments];
+    await this.saveSessionAndDeleteSlots(session, newEndTime, slotsToDelete, slotsToUpdate, allToSave);
+
+    if (unfitAppointments.length > 0) {
+      return {
+        message: `Only ${assignableAppointments.length} appointments adjusted. ${unfitAppointments.length} need manual reschedule.`,
+        reschedule_required: unfitAppointments.map(a => a.id),
+      };
+    } else {
       return {
         message: 'All appointments adjusted with reduced consult time.',
-      };
-
-    } else {
-      const adjustable = bookedAppointments.slice(0, maxAppointmentsPossible);
-      const unfitAppointments = bookedAppointments.slice(maxAppointmentsPossible);
-
-      for (let i = 0; i < adjustable.length; i++) {
-        const app = adjustable[i];
-        const [h, m] = consultStartTime.split(':').map(Number);
-        const iso = new Date(1970, 0, 1, h, m);
-
-        const newReportingTime = new Date(
-          iso.getTime() + i * 5 * 60 * 1000,
-        );
-        const reporting_time = newReportingTime.toTimeString().slice(0, 5);
-
-        app.reporting_time = reporting_time;
-        const matchingSlot = session.slots.find(slot => {
-          return (
-            reporting_time >= slot.start_time.slice(0, 5) &&
-            reporting_time < slot.end_time.slice(0, 5)
-          );
-        });
-
-        if (!matchingSlot) {
-          throw new Error(`No matching slot found for reporting time ${newReportingTime}`);
-        }
-
-        app.slot = matchingSlot;
-
-        const currentCount = bookingCountMap.get(matchingSlot.id) || 0;
-        bookingCountMap.set(matchingSlot.id, currentCount + 1);
-
-        if (currentCount + 1 === maxBookingsPerSlot) {
-          matchingSlot.is_booked = true;
-          matchingSlot.max_bookings = maxBookingsPerSlot;
-          slotsToUpdate.add(matchingSlot);
-        }
-      }
-
-      unfitAppointments.forEach(a => {
-        a.status = AppointmentStatus.PENDING_RESCHEDULE;
-        a.slot = null;
-      });
-      const allAppointmentsToSave = [...adjustable, ...unfitAppointments];
-      session.avg_consult_time = dynamicConsultTime;
-
-      await this.saveSessionAndDeleteSlots(session, newEndTime, slotsToDelete, slotsToUpdate, allAppointmentsToSave);
-      return {
-        message: `Only ${maxAppointmentsPossible} appointments could be adjusted. ${unfitAppointments.length} need manual reschedule.`,
-        reschedule_required: unfitAppointments.map(a => a.id),
       };
     }
   }
