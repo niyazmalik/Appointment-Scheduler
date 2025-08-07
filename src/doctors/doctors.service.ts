@@ -232,7 +232,8 @@ export class DoctorsService {
 
 
   private async handleStartTimeShrinkOrExpand(session: Session, newStartTime: string) {
-    // will handle it once other one is done...
+    // Entire code flow will be copied here and all I'll have to do is some variable tweaks..
+    // so once other handler is done (optimized code), then it will be handled too....
   }
 
   private async handleEndTimeShrinkOrExpand(session: Session, newEndTime: string) {
@@ -303,15 +304,13 @@ export class DoctorsService {
       await this.sessionRepo.save(session);
       await this.slotRepo.save([...slotsToUpdate]);
       await this.appointmentRepo.save([...adjusted]);
-      console.log(adjusted);
+
       if (pending.length > 0) {
         const allAppointments = [...this.getBookedAppointments(session), ...pending];
         const bookedAppointments = Array.from(
           new Map(allAppointments.map(a => [a.id, a])).values()
         );
-        console.log(this.getBookedAppointments(session));
         const totalAppointments = bookedAppointments.length;
-        console.log(bookedAppointments);
 
         return await this.handleFullyBookedCaseForEndShrink(
           bookedAppointments,
@@ -334,7 +333,7 @@ export class DoctorsService {
 
     for (const appointment of affectedAppointments) {
       const availableSlot = this.findAvailableSlotForAppointmentForEndShrink(validSlotsForAdjust, currentTime, bookingCountMap);
-      console.log(availableSlot);
+
       if (availableSlot) {
         const existingBookings = availableSlot.appointments.length;
         const adjustedCount = bookingCountMap.get(availableSlot.id) || 0;
@@ -415,7 +414,7 @@ export class DoctorsService {
 
     const [hours, minutes] = consultStart.split(':').map(Number);
     const baseDate = new Date(1970, 0, 1, hours, minutes);
-    const bufferBeforeConsult = new Date(baseDate.getTime() - 2 * 60 * 60 * 1000);
+    const bufferBeforeConsult = new Date(baseDate.getTime() - 1 * 60 * 60 * 1000);
 
     const bufferTimeStr = bufferBeforeConsult.toTimeString().slice(0, 5);
 
@@ -444,7 +443,7 @@ export class DoctorsService {
     const slotEnd = oneSlot.end_time.slice(0, 5);
     const slotDurationInMinutes = this.getTotalAvailableMinutes(slotStart, slotEnd);
     const maxBookingsPerSlot = Math.floor(slotDurationInMinutes / dynamicConsultTime);
-    console.log(maxAppointmentsPossible, dynamicConsultTime);
+  
     if (maxAppointmentsPossible >= totalAppointments) {
       for (let i = 0; i < totalAppointments; i++) {
         const app = bookedAppointments[i];
@@ -489,7 +488,6 @@ export class DoctorsService {
     } else {
       const adjustable = bookedAppointments.slice(0, maxAppointmentsPossible);
       const unfitAppointments = bookedAppointments.slice(maxAppointmentsPossible);
-      console.log(adjustable, unfitAppointments);
 
       for (let i = 0; i < adjustable.length; i++) {
         const app = adjustable[i];
@@ -580,17 +578,11 @@ export class DoctorsService {
 
   private getValidSlotsForAdjustmentForEndShrink(session: Session, newEnd: String, currentTime: string): Slot[] {
     const consultStart = session.consult_start_time.slice(0, 5);
-    console.log("fetching some valid slots for adjustments: ");
+
     return session.slots.filter(slot => {
       const slotStart = slot.start_time.slice(0, 5);
       const isWithinNewWindow = slotStart >= consultStart && slotStart < newEnd;
       const isNotAttendedYet = slotStart >= currentTime;
-      console.log('Checking slot:', {
-        id: slot.id,
-        start_time: slot.start_time,
-        isWithinNewWindow,
-        isNotAttendedYet,
-      });
 
       return isWithinNewWindow && isNotAttendedYet;
     });
@@ -604,12 +596,6 @@ export class DoctorsService {
       const adjustedCount = bookingMap.get(slot.id) || 0;
       const totalBookings = slot.appointments.length + adjustedCount;
       const hasSpace = totalBookings < slot.max_bookings;
-      console.log({
-        slot_id: slot.id,
-        start_time: slot.start_time,
-        totalBookings,
-        is_after_buffer: isAfterBuffer,
-      });
 
       return hasSpace && isAfterBuffer;
     });
@@ -640,7 +626,6 @@ export class DoctorsService {
         }
         slotsToDelete.push(slot);
       }
-
       else {
         break;
       }
