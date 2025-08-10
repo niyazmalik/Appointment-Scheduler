@@ -19,3 +19,6 @@ Thumbs.db
 # IDEs
 .vscode/
 .idea/
+
+# Scripts
+setup_ssh_windows.sh
