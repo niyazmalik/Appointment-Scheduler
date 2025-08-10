@@ -127,14 +127,7 @@ export class AppointmentService {
             throw new BadRequestException('You have overlapping appointment');
         }
 
-        const [h, m] = slot.start_time.split(':').map(Number);
-        const baseMinutes = h * 60 + m;
-        const reportingMinutes = baseMinutes + totalBooked * session.avg_consult_time;
-
-        const reportingHour = Math.floor(reportingMinutes / 60);
-        const reportingMinute = reportingMinutes % 60;
-
-        const reporting_time = `${reportingHour.toString().padStart(2, '0')}:${reportingMinute.toString().padStart(2, '0')}`;
+        const reporting_time = this.calculateReportingTime(slot.start_time, totalBooked, session.avg_consult_time);
 
         const appointment = this.appointmentRepo.create({
             patient,
@@ -187,18 +180,16 @@ export class AppointmentService {
         if (!newSlot) throw new NotFoundException('New slot not found');
         const session = newSlot.session;
 
-        const totalNewBookings = await this.appointmentRepo.count({
+        const newSlotBookings = await this.appointmentRepo.count({
             where: { slot: { id: newSlot.id } },
         });
 
-        if (totalNewBookings >= newSlot.max_bookings) {
+        if (newSlotBookings >= newSlot.max_bookings) {
             throw new BadRequestException('New slot is fully booked');
         }
-        const reportingTimeDate = getTodayDateTime(newSlot.start_time);
-        reportingTimeDate.setMinutes(
-            reportingTimeDate.getMinutes() + totalNewBookings * session.avg_consult_time,
-        );
-        const reporting_time = reportingTimeDate.toTimeString().slice(0, 5);
+        
+        const reporting_time = this.calculateReportingTime(newSlot.start_time, newSlotBookings, session.avg_consult_time);
+
         appointment.slot = newSlot;
         appointment.status = AppointmentStatus.RESCHEDULED;
         appointment.reporting_time = reporting_time;
@@ -215,7 +206,7 @@ export class AppointmentService {
             }
         }
 
-        if (totalNewBookings + 1 >= newSlot.max_bookings) {
+        if (newSlotBookings + 1 === newSlot.max_bookings) {
             await this.slotRepo.update(newSlot.id, { is_booked: true });
         }
 
@@ -270,11 +261,16 @@ export class AppointmentService {
         if (!appointment) throw new NotFoundException('Appointment not found');
         return appointment;
     }
+
+    private calculateReportingTime(start_time: string, existingBookingsCount: number, avg_consult_time: number) {
+        const [h, m] = start_time.split(':').map(Number);
+        const baseMinutes = h * 60 + m;
+        const reportingMinutes = baseMinutes + existingBookingsCount * avg_consult_time;
+
+        const reportingHour = Math.floor(reportingMinutes / 60);
+        const reportingMinute = reportingMinutes % 60;
+
+        return `${reportingHour.toString().padStart(2, '0')}:${reportingMinute.toString().padStart(2, '0')}`;
+    }
 }
 
-function getTodayDateTime(timeStr: string): Date {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    const now = new Date();
-    now.setHours(hours, minutes, 0, 0);
-    return now;
-}
