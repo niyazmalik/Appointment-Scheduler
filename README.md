@@ -1,6 +1,6 @@
 # 📘Schedula 
 ### A Doctor-Patient Scheduling & Consultation Platform  
-> Built by Niyaz Malik...
+> Built by Niyaz Malik...<br>
 > Developed during my internship at **PearlThoughts**, with special thanks for their guidance and resources.
 
 ---
