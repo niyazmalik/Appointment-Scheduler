@@ -75,4 +75,12 @@ export class DoctorsController {
     const user = req.user as User;
     return this.doctorsService.updateSession(user.id, sessionId, dto);
   }
+
+  @Get(':id/sessions')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('patient', 'doctor')
+  getAvailableSessions(
+    @Param('id', ParseUUIDPipe) doctorId: string) {
+    return this.doctorsService.getUpcomingSessionsWithBookability(doctorId);
+  }
 }

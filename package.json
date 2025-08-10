@@ -33,6 +33,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/typeorm": "^11.0.0",
     "bcrypt": "^6.0.0",
+    "dayjs": "^1.11.13",
     "dotenv": "^17.2.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
