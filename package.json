@@ -1,8 +1,8 @@
 {
-  "name": "CodeXecutioner",
+  "name": "appointment-booking-system-backend",
   "version": "0.0.1",
   "description": "",
-  "author": "",
+  "author": "Niyaz Malik",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
