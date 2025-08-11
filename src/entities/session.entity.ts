@@ -35,9 +35,6 @@ export class Session {
   @Column({ type: 'time' })
   booking_start_time: string;
 
-  @Column({ type: 'time' })
-  booking_end_time: string;
-
   @Column({ type: 'int', default: 10 })
   avg_consult_time: number;
 

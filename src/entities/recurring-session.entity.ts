@@ -27,9 +27,6 @@ export class RecurringSession {
   consult_end_time: string;
 
   @Column({ type: 'time' })
-  booking_start_time: string;
-
-  @Column({ type: 'time' })
   booking_end_time: string;
 
   @Column({ type: 'int', default: 10 })

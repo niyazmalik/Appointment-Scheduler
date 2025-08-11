@@ -55,7 +55,7 @@ export class AppointmentService {
             timeZone: 'Asia/Kolkata',
         });
         const todayBookingStart = session.booking_start_time.slice(0, 5);
-        const todayBookingEnd = session.booking_end_time.slice(0, 5);
+        const todayBookingEnd = this.bookingEndTime(session.consult_end_time);
 
         if (currentTime < todayBookingStart || currentTime > todayBookingEnd) {
             throw new BadRequestException('Booking is not allowed at this time');
@@ -187,7 +187,7 @@ export class AppointmentService {
         if (newSlotBookings >= newSlot.max_bookings) {
             throw new BadRequestException('New slot is fully booked');
         }
-        
+
         const reporting_time = this.calculateReportingTime(newSlot.start_time, newSlotBookings, session.avg_consult_time);
 
         appointment.slot = newSlot;
@@ -271,6 +271,18 @@ export class AppointmentService {
         const reportingMinute = reportingMinutes % 60;
 
         return `${reportingHour.toString().padStart(2, '0')}:${reportingMinute.toString().padStart(2, '0')}`;
+    }
+
+    private bookingEndTime(sessionEndTime: string): string {
+        const [h, m] = sessionEndTime.split(":").map(Number);
+        let totalMinutes = h * 60 + m - 45;
+
+        if (totalMinutes < 0) totalMinutes += 24 * 60;
+
+        const newH = Math.floor(totalMinutes / 60);
+        const newM = totalMinutes % 60;
+
+        return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
     }
 }
 
