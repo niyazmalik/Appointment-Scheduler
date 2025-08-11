@@ -18,6 +18,10 @@ export class CreateSessionDto {
   @Min(1)
   avg_consult_time: number;
 
+  @IsInt()
+  @Min(1)
+  slot_duration: number;
+
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;

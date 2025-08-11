@@ -32,6 +32,9 @@ export class RecurringSession {
   @Column({ type: 'int', default: 10 })
   avg_consult_time: number;
 
+  @Column({ type: 'int', nullable: false })
+  slot_duration: number; // in minutes
+
   @Column({ type: 'boolean', default: true })
   is_active: boolean;
 }

@@ -272,8 +272,19 @@ export class DoctorsService {
     const { originalEnd, newEnd, isShrink, currentTime } = this.getContextForEndShrink(session, newEndTime);
 
     if (!isShrink) {
+
+      /*Right now not handling the edge case where in expansion I have some more time but enough to fit
+        a partial slot only*/
+      const generatedSlots = this.generateSlotsInRange(session, originalEnd, newEnd);
+
+      await this.slotRepo.save(generatedSlots);
+
+      session.consult_end_time = newEndTime;
+      await this.sessionRepo.save(session);
+
       return {
-        message: 'Session end time extended. New slots can now be added as needed.',
+        new_slots: generatedSlots,
+        message: 'Session end time extended and new slots generated.'
       };
     }
 
@@ -473,12 +484,9 @@ export class DoctorsService {
     let appIndex = 0;
 
     for (const slot of session.slots) {
-      const slotStart = slot.start_time.slice(0, 5);
-      const slotEnd = slot.end_time.slice(0, 5);
-      const slotDuration = this.getTotalAvailableMinutes(slotStart, slotEnd);
-
-      const maxBookingsInThisSlot = Math.floor(slotDuration / dynamicConsultTime);
-      const [h, m] = slotStart.split(':').map(Number);
+      const maxBookingsInThisSlot = Math.floor(session.slot_duration / dynamicConsultTime);
+      
+      const [h, m] = slot.start_time.split(':').map(Number);
       const baseDate = new Date(1970, 0, 1, h, m);
 
       let count = 0;
@@ -667,5 +675,38 @@ export class DoctorsService {
     if (slotsToDelete.length > 0) {
       await this.slotRepo.delete(slotsToDelete.map((s) => s.id));
     }
+  }
+  private generateSlotsInRange(
+    session: Session,
+    rangeStart: string,
+    rangeEnd: string,
+  ): Slot[] {
+    const slots: Slot[] = [];
+    const consultTime = session.avg_consult_time;
+    const slotDuration = session.slot_duration;
+    
+    const maxBookings = Math.floor(slotDuration / consultTime) || 1;
+
+    let current = dayjs(rangeStart, 'HH:mm');
+    const endLimit = dayjs(rangeEnd, 'HH:mm');
+
+    while (current.isBefore(endLimit)) {
+      const startTime = current.format('HH:mm');
+      const endTime = current.add(consultTime, 'minute').format('HH:mm');
+
+      slots.push(
+        this.slotRepo.create({
+          session: { id: session.id },
+          start_time: startTime,
+          end_time: endTime,
+          is_booked: false,
+          max_bookings: maxBookings,
+        }),
+      );
+
+      current = dayjs(endTime, 'HH:mm');
+    }
+
+    return slots;
   }
 }
