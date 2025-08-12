@@ -264,8 +264,20 @@ export class DoctorsService {
 
 
   private async handleStartTimeShrinkOrExpand(session: Session, newStartTime: string) {
-    // Entire code flow will be copied here and all I'll have to do is some variable tweaks..
-    // so once other handler is done (optimized code), then it will be handled too....
+    const { originalStart, newStart, isShrink, currentTime } = this.getContextForStartChange(session, newStartTime);
+
+    if (!isShrink) {
+      const generatedSlots = this.generateSlotsStartExpansion(session, newStart, originalStart);
+      await this.slotRepo.save(generatedSlots);
+
+      session.consult_start_time = newStartTime;
+      await this.sessionRepo.save(session);
+
+      return {
+        new_slots: generatedSlots,
+        message: 'Session start time expanded and new slots generated.'
+      };
+    }
   }
 
   private async handleEndTimeShrinkOrExpand(session: Session, newEndTime: string) {
@@ -273,9 +285,7 @@ export class DoctorsService {
 
     if (!isShrink) {
 
-      /*Right now not handling the edge case where in expansion I have some more time but enough to fit
-        a partial slot only*/
-      const generatedSlots = this.generateSlotsInRange(session, originalEnd, newEnd);
+      const generatedSlots = this.generateSlotsEndExpansion(session, originalEnd, newEnd);
 
       await this.slotRepo.save(generatedSlots);
 
@@ -485,7 +495,7 @@ export class DoctorsService {
 
     for (const slot of session.slots) {
       const maxBookingsInThisSlot = Math.floor(session.slot_duration / dynamicConsultTime);
-      
+
       const [h, m] = slot.start_time.split(':').map(Number);
       const baseDate = new Date(1970, 0, 1, h, m);
 
@@ -653,6 +663,22 @@ export class DoctorsService {
     return { originalEnd, newEnd, isShrink, currentTime };
   }
 
+  private getContextForStartChange(session: Session, newStartTime: string) {
+    const originalStart = session.consult_start_time.slice(0, 5);
+    const newStart = newStartTime;
+    const isShrink = newStart > originalStart;
+
+    const now = new Date();
+    const currentTime = now.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Kolkata',
+    });
+
+    return { originalStart, newStart, isShrink, currentTime };
+  }
+
   private updateAppointmentSlotAndTime(
     appointment: Appointment,
     slot: Slot,
@@ -676,7 +702,26 @@ export class DoctorsService {
       await this.slotRepo.delete(slotsToDelete.map((s) => s.id));
     }
   }
-  private generateSlotsInRange(
+
+  private createSlot(
+    sessionId: string,
+    startTime: dayjs.Dayjs,
+    endTime: dayjs.Dayjs,
+    consultTime: number,
+  ): Slot {
+    const slotDurationMinutes = endTime.diff(startTime, 'minute');
+    const maxBookings = Math.floor(slotDurationMinutes / consultTime) || 1;
+
+    return this.slotRepo.create({
+      session: { id: sessionId },
+      start_time: startTime.format('HH:mm'),
+      end_time: endTime.format('HH:mm'),
+      is_booked: false,
+      max_bookings: maxBookings,
+    });
+  }
+
+  private generateSlotsEndExpansion(
     session: Session,
     rangeStart: string,
     rangeEnd: string,
@@ -684,29 +729,45 @@ export class DoctorsService {
     const slots: Slot[] = [];
     const consultTime = session.avg_consult_time;
     const slotDuration = session.slot_duration;
-    
-    const maxBookings = Math.floor(slotDuration / consultTime) || 1;
 
     let current = dayjs(rangeStart, 'HH:mm');
     const endLimit = dayjs(rangeEnd, 'HH:mm');
 
-    while (current.isBefore(endLimit)) {
-      const startTime = current.format('HH:mm');
-      const endTime = current.add(consultTime, 'minute').format('HH:mm');
+    while (current.add(slotDuration, 'minute').diff(endLimit, 'minute') <= 0) {
+      const slotEnd = current.add(slotDuration, 'minute');
+      slots.push(this.createSlot(session.id, current, slotEnd, consultTime));
+      current = slotEnd;
+    }
 
-      slots.push(
-        this.slotRepo.create({
-          session: { id: session.id },
-          start_time: startTime,
-          end_time: endTime,
-          is_booked: false,
-          max_bookings: maxBookings,
-        }),
-      );
-
-      current = dayjs(endTime, 'HH:mm');
+    if (current.diff(endLimit, 'minute') < 0) {
+      slots.push(this.createSlot(session.id, current, endLimit, consultTime));
     }
 
     return slots;
+  }
+
+  private generateSlotsStartExpansion(
+    session: Session,
+    rangeStart: string,
+    rangeEnd: string,
+  ): Slot[] {
+    const slots: Slot[] = [];
+    const consultTime = session.avg_consult_time;
+    const slotDuration = session.slot_duration;
+
+    let current = dayjs(rangeEnd, 'HH:mm');
+    const startLimit = dayjs(rangeStart, 'HH:mm');
+
+    while (current.subtract(slotDuration, 'minute').diff(startLimit, 'minute') >= 0) {
+      const slotStart = current.subtract(slotDuration, 'minute');
+      slots.push(this.createSlot(session.id, slotStart, current, consultTime));
+      current = slotStart;
+    }
+
+    if (current.diff(startLimit, 'minute') > 0) {
+      slots.push(this.createSlot(session.id, startLimit, current, consultTime));
+    }
+
+    return slots.reverse();
   }
 }
