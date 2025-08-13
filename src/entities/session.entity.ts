@@ -45,7 +45,7 @@ export class Session {
   is_active: boolean;
 
   @ManyToOne(() => RecurringSession, { nullable: true, onDelete: 'SET NULL' })
-  recurring_template: RecurringSession;
+  recurring_template?: RecurringSession | null;
 
   @OneToMany(() => Slot, (slot) => slot.session, { cascade: true })
   slots: Slot[];

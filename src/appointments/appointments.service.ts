@@ -12,7 +12,6 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { RescheduleAppointmentDto } from './dto/reschedule-appointment.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 import { Session } from 'src/entities/session.entity';
-import dayjs from 'dayjs';
 
 @Injectable()
 export class AppointmentService {
@@ -68,38 +67,38 @@ export class AppointmentService {
             throw new BadRequestException('Slot must fall within session time');
         }
 
-        const today = dayjs().format('YYYY-MM-DD')
+        // const today = new Date().toISOString().slice(0,10);
 
-        const upcomingSessions = await this.sessionRepo.find({
-            where: {
-                doctor: { id: slot.doctor.id },
-                is_active: true,
-                session_date: MoreThanOrEqual(today),
-            },
-            relations: ['slots'],
-            order: { session_date: 'ASC' },
-        });
+        // const upcomingSessions = await this.sessionRepo.find({
+        //     where: {
+        //         doctor: { id: slot.doctor.id },
+        //         is_active: true,
+        //         session_date: MoreThanOrEqual(today),
+        //     },
+        //     relations: ['slots'],
+        //     order: { session_date: 'ASC' },
+        // });
+        
+        // let firstAvailableSession: Session | null = null;
 
-        let firstAvailableSession: Session | null = null;
+        // for (const s of upcomingSessions) {
+        //     const hasFreeSlot = s.slots.some(
+        //         (sl) => !sl.is_booked && sl.max_bookings > 0
+        //     );
+        //     if (hasFreeSlot) {
+        //         firstAvailableSession = s;
+        //         break;
+        //     }
+        // }
 
-        for (const s of upcomingSessions) {
-            const hasFreeSlot = s.slots.some(
-                (sl) => !sl.is_booked && sl.max_bookings > 0
-            );
-            if (hasFreeSlot) {
-                firstAvailableSession = s;
-                break;
-            }
-        }
+        // if (!firstAvailableSession) {
+        //     throw new BadRequestException('No available session for booking');
+        // }
 
-        if (!firstAvailableSession) {
-            throw new BadRequestException('No available session for booking');
-        }
-
-        if (session.id !== firstAvailableSession.id) {
-            throw new BadRequestException('Only the earliest available session is bookable');
-        }
-
+        // if (session.id !== firstAvailableSession.id) {
+        //     throw new BadRequestException('Only the earliest available session is bookable');
+        // }
+        
         const totalBooked = await this.appointmentRepo.count({
             where: { slot: { id: slot.id } },
         });
@@ -275,8 +274,8 @@ export class AppointmentService {
 
     private bookingEndTime(sessionEndTime: string): string {
         const [h, m] = sessionEndTime.split(":").map(Number);
-        let totalMinutes = h * 60 + m - 45;
-
+        let totalMinutes = h * 60 + m - 10;
+    
         if (totalMinutes < 0) totalMinutes += 24 * 60;
 
         const newH = Math.floor(totalMinutes / 60);

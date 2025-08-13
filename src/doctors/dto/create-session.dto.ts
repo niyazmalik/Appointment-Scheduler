@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsBoolean, IsOptional, Min, Matches } from 'class-validator';
+import { IsEnum, IsInt, IsBoolean, IsOptional, Min, Matches, IsString, IsDateString } from 'class-validator';
 import { DayOfWeek } from 'src/enums/day.enum';
 
 export class CreateSessionDto {
@@ -21,6 +21,13 @@ export class CreateSessionDto {
   @IsInt()
   @Min(1)
   slot_duration: number;
+
+  @IsOptional()
+  @IsString()
+  recurring_template?: string;
+
+  @IsDateString()
+  session_date: string; 
 
   @IsOptional()
   @IsBoolean()
