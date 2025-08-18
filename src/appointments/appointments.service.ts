@@ -46,13 +46,14 @@ export class AppointmentService {
         const session = slot.session;
         if (!session) throw new BadRequestException('Slot must have a session');
 
-        const now = new Date();
-        const currentTime = now.toLocaleTimeString('en-GB', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-            timeZone: 'Asia/Kolkata',
-        });
+        // const now = new Date();
+        // const currentTime = now.toLocaleTimeString('en-GB', {
+        //     hour: '2-digit',
+        //     minute: '2-digit',
+        //     hour12: false,
+        //     timeZone: 'Asia/Kolkata',
+        // });
+        const currentTime = "08:00";
         const todayBookingStart = session.booking_start_time.slice(0, 5);
         const todayBookingEnd = this.bookingEndTime(session.consult_end_time);
 
