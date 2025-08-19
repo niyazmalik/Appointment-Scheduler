@@ -3,7 +3,7 @@
 
 ---
 
-## 📖 Overview
+## Overview
 
 **Appointment-Scheduler** is a healthcare platform that enables doctors and patients to seamlessly connect for online consultations, appointment scheduling, and communication. It aims to digitize the clinical workflow and improve patient care by providing a modern, efficient backend system.
 
@@ -11,7 +11,7 @@ This documentation outlines the complete API structure used across the system. E
 
 ---
 
-## 📦 Tech Stack
+## Tech Stack
 
 - **Framework:** NestJS (Node.js)
 - **Database:** PostgreSQL
